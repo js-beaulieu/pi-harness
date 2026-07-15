@@ -6,10 +6,17 @@ import { fileURLToPath } from "node:url";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pkg = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8"));
-const source = process.env.PI_HARNESS_SOURCE ?? `git:github.com/js-beaulieu/pi-harness@v${pkg.version}`;
-const [command = "", destination = "."] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const [command = ""] = args;
+const sourceFlag = args.indexOf("--source");
+let destination = ".";
+for (let index = 1; index < args.length; index += 1) {
+  if (args[index] === "--source") { index += 1; continue; }
+  destination = args[index]; break;
+}
+const source = process.env.PI_HARNESS_SOURCE ?? (sourceFlag >= 0 ? args[sourceFlag + 1] : undefined) ?? `git:github.com/js-beaulieu/pi-harness@v${pkg.version}`;
 if (command !== "init") {
-  console.error("Usage: pi-harness init [directory]");
+  console.error("Usage: pi-harness init [directory] [--source <Pi package source>]");
   process.exitCode = 1;
 } else {
   const root = path.resolve(destination); const templates = path.join(packageRoot, "templates", "root");

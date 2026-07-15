@@ -18,6 +18,8 @@ npx --yes github:js-beaulieu/pi-harness#v0.1.0 init
 
 The command is idempotent. It creates/adopts the coordination root, writes local `.pi/settings.json` pinned to that tag, and creates `projects/`, `docs/`, `workspace.yaml`, mise, and Task files. It does not start Pi, so it works equally with Paseo, the Pi TUI, and other Pi hosts.
 
+For local package development, pass a local Pi package source explicitly, for example `pi-harness init . --source ../../pi-harness`. This prevents a test workspace from trying to fetch an unpublished Git tag.
+
 Next, clone existing product repositories or create and initialize greenfield repositories under `projects/`. Open Pi normally and say that you want to onboard the workspace, or run:
 
 ```text
