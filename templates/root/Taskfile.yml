@@ -1,0 +1,5 @@
+version: '3'
+includes:
+  harness:
+    taskfile: .pi-harness/Taskfile.yml
+    optional: true

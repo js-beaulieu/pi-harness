@@ -1,0 +1,6 @@
+.pi/npm/
+.pi/harness/state/
+.pi/harness/review-log/
+.codebase-memory/
+projects/*
+!projects/.gitkeep

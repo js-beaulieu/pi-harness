@@ -1,0 +1,12 @@
+{
+  "permission": {
+    "*": "ask",
+    "bash": { "*": "ask" },
+    "mcp": { "*": "ask" },
+    "external_directory": "ask",
+    "workspace_workflow": "allow",
+    "workspace_knowledge": "allow",
+    "workspace_onboarding": "allow",
+    "ask_user": "allow"
+  }
+}

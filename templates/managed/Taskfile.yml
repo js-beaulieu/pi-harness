@@ -1,0 +1,8 @@
+version: '3'
+tasks:
+  bootstrap:
+    cmds:
+      - node scripts/projects.mjs bootstrap
+  status:
+    cmds:
+      - node scripts/projects.mjs status

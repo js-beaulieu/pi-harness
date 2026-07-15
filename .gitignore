@@ -1,0 +1,7 @@
+node_modules/
+projects/*
+!projects/.gitkeep
+.pi/npm/
+.pi/harness/state/
+.pi/harness/review-log/
+.codebase-memory/

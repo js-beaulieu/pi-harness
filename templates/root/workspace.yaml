@@ -1,0 +1,26 @@
+version: 1
+
+workspace:
+  docs_directory: docs
+  projects_directory: projects
+
+agents:
+  orchestrator: { model: bifrost/main }
+  impl: { model: bifrost/code }
+  impl-lite: { model: bifrost/code-lite }
+  explore: { model: bifrost/main }
+
+permissions:
+  default: ask
+  shell: ask
+  mcp: ask
+  external_directories: ask
+
+code_graph:
+  server_name: codebase-memory
+  command: corepack
+  args: [pnpm, exec, codebase-memory-mcp]
+  lifecycle: lazy
+  idle_timeout: 10
+
+projects: []
