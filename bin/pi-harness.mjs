@@ -3,6 +3,7 @@ import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import YAML from "yaml";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const pkg = JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8"));
@@ -33,5 +34,18 @@ if (command !== "init") {
   const identity = source.replace(/@[^@]+$/, ""); const next = [...packages.filter((entry) => String(entry).replace(/@[^@]+$/, "") !== identity), source];
   await writeFile(settingsFile, JSON.stringify({ ...settings, packages: next }, null, 2) + "\n");
   report(`Pinned ${source} in local Pi settings.`);
+  const workspace = YAML.parse(await readFile(path.join(root, "workspace.yaml"), "utf8")) ?? {};
+  const managed = path.join(root, ".pi-harness");
+  await cp(path.join(packageRoot, "templates", "managed"), managed, { recursive: true, force: true });
+  await writeFile(path.join(managed, "manifest.json"), JSON.stringify({ package: pkg.name, version: pkg.version, generatedAt: new Date().toISOString() }, null, 2) + "\n");
+  const mcpFile = path.join(root, ".mcp.json"); const mcp = existsSync(mcpFile) ? JSON.parse(await readFile(mcpFile, "utf8")) : {}; const graph = workspace.code_graph ?? {};
+  await writeFile(mcpFile, JSON.stringify({ ...mcp, mcpServers: { ...(mcp.mcpServers ?? {}), [graph.server_name ?? "codebase-memory"]: { command: graph.command ?? "corepack", args: graph.args ?? ["pnpm", "exec", "codebase-memory-mcp"], lifecycle: graph.lifecycle ?? "lazy", idleTimeout: graph.idle_timeout ?? 10 } } }, null, 2) + "\n");
+  const permission = JSON.parse(await readFile(path.join(packageRoot, "templates", "permission-config.json"), "utf8")); const configuredPermissions = workspace.permissions ?? {};
+  permission.permission["*"] = configuredPermissions.default ?? "allow"; permission.permission.bash["*"] = configuredPermissions.shell ?? "allow"; permission.permission.mcp["*"] = configuredPermissions.mcp ?? "allow"; permission.permission.external_directory = configuredPermissions.external_directories ?? { "*": "ask" };
+  const permissionFile = path.join(root, ".pi", "extensions", "pi-permission-system", "config.json"); await mkdir(path.dirname(permissionFile), { recursive: true }); await writeFile(permissionFile, JSON.stringify(permission, null, 2) + "\n");
+  const agents = workspace.agents ?? {}; const agentOverrides = settings.subagents?.agentOverrides ?? {};
+  for (const [name, config] of Object.entries(agents)) if (name !== "orchestrator" && config?.model) agentOverrides[name] = { ...(agentOverrides[name] ?? {}), model: config.model };
+  await writeFile(settingsFile, JSON.stringify({ ...settings, packages: next, ...(agents.orchestrator?.model ? { defaultModel: agents.orchestrator.model } : {}), subagents: { ...(settings.subagents ?? {}), agentOverrides } }, null, 2) + "\n");
+  report("Generated managed Pi, MCP, permission, and task configuration.");
   report("Initialization complete. Add local repositories under projects/, then open Pi in this directory and ask it to onboard the workspace.");
 }

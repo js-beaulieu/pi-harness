@@ -1,9 +1,15 @@
 {
   "permission": {
-    "*": "ask",
-    "bash": { "*": "ask" },
-    "mcp": { "*": "ask" },
-    "external_directory": "ask",
+    "*": "allow",
+    "path": {
+      "*": "allow",
+      "*.env": "deny",
+      "*.env.*": "deny",
+      "*.env.example": "allow"
+    },
+    "bash": { "*": "allow" },
+    "mcp": { "*": "allow" },
+    "external_directory": { "*": "ask" },
     "workspace_workflow": "allow",
     "workspace_knowledge": "allow",
     "workspace_onboarding": "allow",

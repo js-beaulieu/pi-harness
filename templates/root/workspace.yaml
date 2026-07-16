@@ -11,9 +11,9 @@ agents:
   explore: { model: bifrost/main }
 
 permissions:
-  default: ask
-  shell: ask
-  mcp: ask
+  default: allow
+  shell: allow
+  mcp: allow
   external_directories: ask
 
 code_graph:

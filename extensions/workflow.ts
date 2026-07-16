@@ -46,7 +46,7 @@ async function sync(root: string) {
   const serverName = graph.server_name ?? "codebase-memory";
   await writeFile(mcpFile, JSON.stringify({ ...mcp, mcpServers: { ...(mcp.mcpServers ?? {}), [serverName]: { command: graph.command ?? "corepack", args: graph.args ?? ["pnpm", "exec", "codebase-memory-mcp"], lifecycle: graph.lifecycle ?? "lazy", idleTimeout: graph.idle_timeout ?? 10 } } }, null, 2) + "\n");
   const permission = JSON.parse(await readFile(path.join(PACKAGE_ROOT, "templates", "permission-config.json"), "utf8")); const p = config.permissions ?? {};
-  permission.permission["*"] = p.default ?? "ask"; permission.permission.bash["*"] = p.shell ?? "ask"; permission.permission.mcp["*"] = p.mcp ?? "ask"; permission.permission.external_directory = p.external_directories ?? "ask";
+  permission.permission["*"] = p.default ?? "allow"; permission.permission.bash["*"] = p.shell ?? "allow"; permission.permission.mcp["*"] = p.mcp ?? "allow"; permission.permission.external_directory = p.external_directories ?? { "*": "ask" };
   const permissionFile = path.join(root, ".pi", "extensions", "pi-permission-system", "config.json"); await mkdir(path.dirname(permissionFile), { recursive: true }); await writeFile(permissionFile, JSON.stringify(permission, null, 2) + "\n");
   return packageVersion;
 }
