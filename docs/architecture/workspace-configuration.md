@@ -1,6 +1,6 @@
 # Workspace configuration
 
-`workspace.yaml` is the only workspace-specific configuration input. It is committed and user-owned. `/workspace:init` creates it; `/workspace:sync` reads it and reconciles the generated runtime files.
+`workspace.yaml` is the only workspace-specific configuration input. It is committed and user-owned. The pre-Pi `pi-harness init` command creates it; `/workspace:sync` reads it and reconciles the generated runtime files.
 
 | Section | Owns | Generated consumer |
 | --- | --- | --- |
@@ -17,6 +17,6 @@ The YAML controls workspace values, not the workflow’s non-negotiable invarian
 
 ## Guided onboarding
 
-After `/workspace:init`, `/workspace:onboard` can inspect GitHub repositories supplied by the user and the models available to the local Pi installation. It proposes default branches from GitHub metadata and CI commands only when it finds an explicit `task ci`, package `ci`, `lint`, or `test` script. Dependencies remain an explicit user decision. The agent stages, but cannot apply, a complete reviewed manifest; only the user’s `/workspace:onboard apply` command writes it and synchronizes generated files.
+Run `pi-harness init` before opening Pi, then place cloned or initialized repositories beneath `projects/`. `/workspace:onboard` inspects those local checkouts only—Git metadata, checked-out CI workflows, Taskfiles, and package scripts—then asks the user to confirm CI, dependencies, and model pins. It never calls GitHub, the web, `gh`, or a remote; it never creates or clones repositories.
 
-Existing local directories are valid onboarding references too: use a path such as `projects/api`, an absolute path, or an existing name beneath `projects/`. They are inspected directly without `gh`; an origin remote is recorded when present. Any cloneable Git remote URL is also valid and uses Git rather than `gh`. A bare missing name is a greenfield local project: `/workspace:onboard apply` creates its Git repository under `projects/` only after the user reviewed and explicitly applied the proposal. A local-only project without a remote omits `repository`, and bootstrap leaves its path alone rather than attempting a clone.
+The agent stages the complete proposed manifest, then asks its single token-bound Apply / Revise / Cancel question. An Apply response writes the manifest and synchronizes generated configuration; there is no `/workspace:onboard apply` slash command.

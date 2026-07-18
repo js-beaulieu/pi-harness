@@ -1,6 +1,7 @@
-.pi/npm/
-.pi/harness/state/
-.pi/harness/review-log/
+.pi/
+.mcp.json
+.pi-subagents/
 .codebase-memory/
+node_modules/
 projects/*
 !projects/.gitkeep

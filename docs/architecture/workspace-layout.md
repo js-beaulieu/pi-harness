@@ -4,6 +4,7 @@ Each product workspace is a private coordination root for independent product re
 
 ```text
 root/
+├── .git/                 # coordination repository; docs/configuration are committed here
 ├── .pi-harness/          # managed, committed package-generated tools
 ├── docs/                 # user-owned canonical, reviewed knowledge base
 ├── projects/             # ignored child-repository clones

@@ -6,10 +6,10 @@ Code intelligence and authored knowledge have different jobs.
 
 Keep this specialized system rather than hand-rolling a code graph. Reimplementing parsers, language resolution, cross-project edges, incremental indexing, and query tooling would recreate a substantial system with no workflow-specific advantage. The workspace adds the useful integration around it instead:
 
-- `task harness:bootstrap` installs the binary as a pinned project dependency and indexes every declared clone.
+- Pi Harness bundles the MCP package and launches it with Pi's own Node executable; workspaces do not need Corepack, pnpm, or a separate global install.
 - `task index` and `task reindex` derive project paths from `workspace.yaml`.
 - Workers use the graph for structural discovery before broad file reading.
 - The workflow records that an index is current before entering review.
 - The graph database and any exported artifacts are disposable; Markdown in `docs/` remains authoritative.
 
-The binary is pinned in the root `package.json`; `.mcp.json` exposes that local binary through `pi-mcp-adapter`. It stays local to the developer machine and its graph database remains disposable, but every workspace installation has the same discovery capability.
+The binary is pinned in the Pi Harness package; `.mcp.json` exposes it through `pi-mcp-adapter`. It stays local to the developer machine and its graph database remains disposable, but every workspace installation has the same discovery capability.

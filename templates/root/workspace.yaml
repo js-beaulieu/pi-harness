@@ -10,6 +10,13 @@ agents:
   impl-lite: { model: bifrost/code-lite }
   explore: { model: bifrost/main }
 
+subagents:
+  async_by_default: true
+  tool_description_mode: compact
+  completion_batch: true
+  intercom_bridge_mode: always
+  supervisor_output: compact
+
 permissions:
   default: allow
   shell: allow
@@ -18,8 +25,6 @@ permissions:
 
 code_graph:
   server_name: codebase-memory
-  command: corepack
-  args: [pnpm, exec, codebase-memory-mcp]
   lifecycle: lazy
   idle_timeout: 10
 

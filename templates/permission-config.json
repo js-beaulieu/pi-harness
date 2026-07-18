@@ -9,7 +9,7 @@
     },
     "bash": { "*": "allow" },
     "mcp": { "*": "allow" },
-    "external_directory": { "*": "ask" },
+    "external_directory": { "*": "ask", "/dev/null": "allow", "/tmp/*": "allow" },
     "workspace_workflow": "allow",
     "workspace_knowledge": "allow",
     "workspace_onboarding": "allow",

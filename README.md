@@ -16,7 +16,7 @@ Install from a tagged public GitHub release directly—no npmjs or GitHub Packag
 npx --yes github:js-beaulieu/pi-harness#v0.1.0 init
 ```
 
-The command is idempotent. It creates/adopts the coordination root, writes local `.pi/settings.json` pinned to that tag, and creates `projects/`, `docs/`, `workspace.yaml`, mise, and Task files. It does not start Pi, so it works equally with Paseo, the Pi TUI, and other Pi hosts.
+The command is idempotent. It creates/adopts the coordination root, initializes it as a Git repository on `main` when needed, writes local `.pi/settings.json` pinned to that tag, and creates `projects/`, `docs/`, `workspace.yaml`, mise, and Task files. It does not start Pi, so it works equally with Paseo, the Pi TUI, and other Pi hosts.
 
 For local package development, pass a local Pi package source explicitly, for example `pi-harness init . --source ../../pi-harness`. This prevents a test workspace from trying to fetch an unpublished Git tag.
 
@@ -37,11 +37,11 @@ Onboarding examines local checkouts only: Git metadata, checked-out CI workflows
 /workspace:done
 ```
 
-`/workspace:plan` creates a session-scoped plan. Pi searches canonical knowledge, uses the mandatory code graph for structural discovery, identifies projects/contracts/risks/validation, and creates durable Plan and Task entries. It may create recorded feature branches but cannot edit product code.
+`/workspace:plan` creates a session-scoped plan and a separate workspace branch for coordination changes. Its required order is knowledge orientation (Project Architecture References, contracts, decisions), code-graph discovery, then targeted direct code inspection. It identifies projects/contracts/risks/validation and creates durable Plans, Tasks, and project architecture references. It may create recorded feature branches but cannot edit product code.
 
-`/workspace:code` is your explicit implementation authorization. The parent orchestrator delegates every product edit: `impl` handles complex or multi-file work and `impl-lite` handles narrow work. Workers return changed files, checks, deviations, risks, and blockers; they do not write canonical knowledge.
+`/workspace:code` is your explicit implementation authorization. The parent orchestrator launches `impl` for complex/multi-file work and `impl-lite` for narrow work via Pi Subagents, asynchronously and with one writer per checkout. Those exact names receive the manifest model pins. Workers return changed files, checks, deviations, risks, and blockers; they do not write canonical knowledge.
 
-Pi can enter review only after CI and code-index evidence are recorded and every affected project has a PR. Review is read-only. `/workspace:done` is closure only; Pi never merges or force-pushes.
+Pi commits workspace knowledge/configuration on its own branch before review. A workspace PR is required alongside affected product PRs whenever its GitHub origin and the local `gh` session permit it. Pi can enter review only after CI and code-index evidence are recorded. Review is read-only. `/workspace:done` is closure only; Pi never merges or force-pushes.
 
 ## Configuration and ownership
 
@@ -49,14 +49,17 @@ Pi can enter review only after CI and code-index evidence are recorded and every
 
 - project paths, optional origin remotes, default branches, dependencies, and required CI commands;
 - orchestrator/worker model pins;
-- code-graph command and lifecycle; and
+- subagent async/intercom behavior and compact versus full supervisor-message rendering;
+- code-graph lifecycle (or an explicitly overridden command); and
 - permission defaults.
 
 `/workspace:sync` regenerates `.pi-harness/`, managed Pi settings, MCP configuration, and permission configuration. It preserves `workspace.yaml`, `docs/`, root instructions, and unrelated Pi/MCP settings.
 
-`docs/` is canonical authored knowledge. Only the parent session accesses it through `workspace_knowledge`; direct native reads/writes and shell access are blocked. Entries are structured Markdown. Updates are section-scoped compare-and-patch operations that require evidence and leave the file untouched for wording-only or formatting-only changes.
+`docs/` is canonical authored knowledge. Only the parent session accesses it through the workspace knowledge tools; direct native reads/writes and shell access are blocked. Start with `workspace_knowledge` orientation, then read Project Architecture References, Contracts, and Decisions before exploring code. `workspace_knowledge_record` records factual named sections, creates valid structured entries, preserves unnamed sections, and leaves wording-only or formatting-only changes untouched.
 
-The code graph is mandatory structural acceleration, never a source of truth. Use it before broad reading for architecture, ownership, call paths, routes, and cross-project impact.
+Pi Subagent debug artifacts are disabled for Harness delegations and `.pi-subagents/` is ignored at the coordination root. Product repositories are never expected to add Harness-specific ignore rules.
+
+The code graph is mandatory structural acceleration, never a source of truth. It is bundled with Pi Harness and launched through the Node executable that is already running Pi—no Corepack, pnpm, or workspace runtime is assumed. Use it before broad reading for architecture, ownership, call paths, routes, and cross-project impact.
 
 ## Security boundary
 
