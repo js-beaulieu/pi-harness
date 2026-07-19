@@ -3,6 +3,9 @@ version: 1
 workspace:
   docs_directory: docs
   projects_directory: projects
+  worktrees_directory: worktrees
+  # setup: ["pnpm install"] # $PWD is the session workspace; PH_WORKSPACE_BASE is this root
+  # cleanup: ["docker compose down"]
 
 agents:
   orchestrator: { model: bifrost/main }
@@ -28,4 +31,7 @@ code_graph:
   lifecycle: lazy
   idle_timeout: 10
 
+# Each project may also declare setup and cleanup command arrays for session worktrees.
+# Hooks run with their worktree as $PWD and receive PH_PROJECT_BASE, so a hook can copy
+# ignored local state without Git-path tricks, e.g. `cp "$PH_PROJECT_BASE/.env" .env`.
 projects: []

@@ -1,5 +1,5 @@
 export type Phase = "plan" | "code" | "review" | "done";
-export type WorkflowState = { id: string; sessionId: string; subject: string; phase: Phase; createdAt: string; updatedAt: string; projects: string[]; branches: Record<string, string>; pullRequests: Record<string, number>; checks: { ciPassed: boolean; codeIndexed: boolean }; notes: string[] };
+export type WorkflowState = { id: string; sessionId: string; subject: string; phase: Phase; createdAt: string; updatedAt: string; projects: string[]; branches: Record<string, string>; sessionWorktree?: { branch: string; products: Record<string, string> }; pullRequests: Record<string, number>; checks: { ciPassed: boolean; codeIndexed: boolean }; notes: string[] };
 
 export function slugify(value: string): string { return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 64) || "workflow"; }
 const BRANCH_FILLER = new Set(["a", "an", "the", "and", "or", "for", "of", "to", "in", "on", "with", "from", "into", "about", "after", "before", "across", "within", "that", "this", "these", "those", "i", "we", "need", "want", "please", "can", "could", "should", "would", "like", "ability"]);

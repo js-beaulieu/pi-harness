@@ -24,6 +24,7 @@ test("onboarding discovers only existing local projects and requires approval", 
   await writeFile(path.join(root, "projects", "api", "package.json"), JSON.stringify({ packageManager: "pnpm@10", scripts: { lint: "x", test: "x" } }));
   const h = harness(); const result = await h.tools.get("workspace_onboarding").execute("id", { action: "discover" }, undefined, undefined, ctx(root));
   assert.deepEqual(result.details.repositories[0].ci, ["pnpm lint", "pnpm test"]);
+  assert.match(result.details.manifest, /worktrees_directory: worktrees/); assert.match(result.details.manifest, /setup: \[\]/); assert.match(result.details.manifest, /cleanup: \[\]/);
   const staged = await h.tools.get("workspace_onboarding").execute("id", { action: "propose", manifest: result.details.manifest }, undefined, undefined, ctx(root));
   await assert.rejects(h.tools.get("workspace_onboarding").execute("id", { action: "apply", approvalToken: staged.details.approvalToken }, undefined, undefined, ctx(root)), /fresh ask_user/);
   h.asks.get("ask:answered")({ context: `pi-harness:onboarding-apply:${staged.details.approvalToken}`, response: { kind: "selection", selections: ["Apply now"] } });
@@ -113,4 +114,19 @@ test("docs path protection does not block conventional commit messages", async (
 test("onboard command is a local-only conversation", async () => workspace(async (root) => {
   const h = harness(); await h.commands.get("workspace:onboard").handler("", ctx(root));
   assert.match(h.messages[0].message, /local-first/); await assert.rejects(h.commands.get("workspace:onboard").handler("owner/repo", ctx(root)), /takes no sources/);
+}));
+
+test("a workspace session creates isolated coordination and product worktrees that can be reattached", async () => workspace(async (root) => {
+  await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\n  worktrees_directory: worktrees\n  setup: [\"test -n \\\"$PH_WORKSPACE_BASE\\\" && test -z \\\"${PI_SUBAGENT_CHILD:-}\\\" && touch .workspace-session-marker\"]\n  cleanup: [\"rm -f .workspace-session-marker\"]\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n    setup: [\"test -n \\\"$PH_PROJECT_BASE\\\" && test -z \\\"${PI_SUBAGENT_CHILD:-}\\\" && touch .project-session-marker\"]\n    cleanup: [\"rm -f .project-session-marker\"]\n");
+  await writeFile(path.join(root, ".gitignore"), ".pi/\n.mcp.json\n.pi-harness/\nprojects/\nworktrees/\n");
+  execFileSync("git", ["init", "-q", "-b", "main", root]); execFileSync("git", ["-C", root, "config", "user.email", "test@example.com"]); execFileSync("git", ["-C", root, "config", "user.name", "Test User"]); execFileSync("git", ["-C", root, "add", "workspace.yaml", ".gitignore"]); execFileSync("git", ["-C", root, "commit", "-qm", "workspace"]);
+  const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true }); await writeFile(path.join(api, "service.ts"), "export const service = true;\n");
+  execFileSync("git", ["init", "-q", "-b", "main", api]); execFileSync("git", ["-C", api, "config", "user.email", "test@example.com"]); execFileSync("git", ["-C", api, "config", "user.name", "Test User"]); execFileSync("git", ["-C", api, "add", "service.ts"]); execFileSync("git", ["-C", api, "commit", "-qm", "api"]);
+  const h = harness(); const result = await h.tools.get("workspace_session").execute("id", { action: "create", subject: "Add session isolation" }, undefined, undefined, ctx(root)); const sessionRoot = path.join(root, result.details.path);
+  assert.equal(existsSync(path.join(sessionRoot, "workspace.yaml")), true); assert.equal(existsSync(path.join(sessionRoot, "projects", "api", "service.ts")), true);
+  assert.equal(existsSync(path.join(sessionRoot, ".workspace-session-marker")), true); assert.equal(existsSync(path.join(sessionRoot, "projects", "api", ".project-session-marker")), true);
+  assert.equal(execFileSync("git", ["-C", sessionRoot, "branch", "--show-current"], { encoding: "utf8" }).trim(), "feat/session-isolation"); assert.equal(execFileSync("git", ["-C", path.join(sessionRoot, "projects", "api"), "branch", "--show-current"], { encoding: "utf8" }).trim(), "feat/session-isolation");
+  const resumed = { ...ctx(sessionRoot), sessionManager: { getSessionId: () => "session-b" } }; await h.commands.get("workspace:continue").handler(result.details.workflowId, resumed); const state = await h.tools.get("workspace_workflow").execute("id", { action: "status" }, undefined, undefined, resumed);
+  assert.equal(state.details.sessionId, "session-b"); assert.deepEqual(state.details.sessionWorktree.products, { api: "projects/api" });
+  await h.tools.get("workspace_session").execute("id", { action: "cleanup", session: result.details.path }, undefined, undefined, ctx(root)); assert.equal(existsSync(sessionRoot), false);
 }));

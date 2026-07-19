@@ -26,7 +26,7 @@ Next, clone existing product repositories or create and initialize greenfield re
 /workspace:onboard
 ```
 
-Onboarding examines local checkouts only: Git metadata, checked-out CI workflows, Taskfiles, and package scripts. It never calls GitHub, the web, `gh`, or remote inspection; it never creates or clones repositories. It proposes the complete manifest, uses structured questions for dependencies, uncertain CI commands, and model pins, then applies only after an explicit **Apply now** confirmation.
+Onboarding examines local checkouts only: Git metadata, checked-out CI workflows, Taskfiles, and package scripts. It never calls GitHub, the web, `gh`, or remote inspection; it never creates or clones repositories. It proposes the complete manifest, uses structured questions for dependencies, uncertain CI commands, model pins, and workspace/project setup and cleanup commands for session worktrees, then applies only after an explicit **Apply now** confirmation.
 
 ## Daily flow
 
@@ -37,9 +37,11 @@ Onboarding examines local checkouts only: Git metadata, checked-out CI workflows
 /workspace:done
 ```
 
+For concurrent work, start with `/workspace:session Add saved searches`. It creates an ignored `worktrees/<session>/` coordination checkout plus matching product worktrees, each on the workflow branch, and runs optional setup commands from `workspace.yaml`. Hooks run in a direct extension-owned shell, not a subagent; their worktree is `$PWD`, and `PH_WORKSPACE_BASE` / `PH_PROJECT_BASE` point to the original checkouts for copying local state such as `.env` files. Open Pi in that new directory and run the supplied `/workspace:continue <id>` command to reattach the saved workflow. A session worktree owns its canonical docs, configuration branch, and product checkouts; separate sessions may therefore write to the same product independently. `/workspace:session cleanup <session>` runs configured teardown and removes only clean worktrees; it preserves branches.
+
 `/workspace:plan` creates a session-scoped plan and a separate workspace branch for coordination changes. Its required order is knowledge orientation (Project Architecture References, contracts, decisions), code-graph discovery, then targeted direct code inspection. It identifies projects/contracts/risks/validation and creates durable Plans, Tasks, and project architecture references. It may create recorded feature branches but cannot edit product code.
 
-`/workspace:code` is your explicit implementation authorization. The parent orchestrator launches `impl` for complex/multi-file work and `impl-lite` for narrow work via Pi Subagents, asynchronously and with one writer per checkout. Those exact names receive the manifest model pins. Workers return changed files, checks, deviations, risks, and blockers; they do not write canonical knowledge.
+`/workspace:code` is your explicit implementation authorization. The parent orchestrator launches `impl` for complex/multi-file work and `impl-lite` for narrow work via Pi Subagents, asynchronously and with one writer per checkout. A workspace session has its own checkout of every configured product, so sessions can run independently. Those exact names receive the manifest model pins. Workers return changed files, checks, deviations, risks, and blockers; they do not write canonical knowledge.
 
 Pi commits workspace knowledge/configuration on its own branch before review. A workspace PR is required alongside affected product PRs whenever its GitHub origin and the local `gh` session permit it. Pi can enter review only after CI and code-index evidence are recorded. Review is read-only. `/workspace:done` is closure only; Pi never merges or force-pushes.
 
@@ -64,3 +66,12 @@ The code graph is mandatory structural acceleration, never a source of truth. It
 ## Security boundary
 
 This is an enforcement layer inside a trusted Pi installation. It constrains native Pi tools and permission-system actions, but cannot prevent a user from disabling the package, approving an action, or using another terminal. Use an OS sandbox for untrusted code.
+
+## Development
+
+```sh
+pnpm test
+pnpm lint
+```
+
+Contributor guidance is in [AGENTS.md](AGENTS.md).

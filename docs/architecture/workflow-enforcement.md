@@ -19,6 +19,7 @@ The `pi-harness` extension intercepts every native Pi tool call before execution
 - Pull-request creation is allowed only in `code`.
 - During `plan`, `review`, and `done`, shell commands are limited to a small read-only Git/GitHub allowlist plus branch switching. A command that does not match is blocked rather than guessed safe.
 - The parent Pi session is treated as an orchestrator and cannot edit `projects/**`. Only `pi-subagents` children in the `impl` or `impl-lite` role receive editing tools. Harness launches disable disposable Pi Subagent artifacts so they do not appear in product worktrees.
+- `/workspace:session` creates one coordination worktree and one worktree per configured product for a reattachable workflow session. A session is opened as a separate Pi process and resumed with `/workspace:continue`; its docs and product checkouts are isolated from other sessions.
 - `pi-subagents` exposes only the tools declared by each role. `@gotgenes/pi-permission-system` adds runtime allow/ask/deny policy for paths, shell commands, MCP tools, and skills.
 
 ## What cannot be enforced
