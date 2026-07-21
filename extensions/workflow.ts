@@ -1,7 +1,8 @@
 import { cp, mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SessionManager, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -185,9 +186,10 @@ type KnowledgeImpact = { impacted: Array<{ nodePath: string; matchedBy: string[]
 type KnowledgeImpactEnvelope = { version: 1; source: KnowledgeSource; graph: KnowledgeGraphCheck; changedSymbols: KnowledgeSymbolAnchor[]; changedInterfaces: string[]; digest: string };
 type HistoryPlan = { version: 1; project: string; baseCommit: string | null; targetCommit: string; complexity: HistoryComplexity; recordedAtPlan: number; chunks: string[][] };
 type BackfillRun = { version: 1; type: "backfill-run"; plans: HistoryPlan[] };
-const knowledgeTokenStore = new Map<string, unknown>();
-function knowledgeToken(value: unknown) { const key = createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 24); knowledgeTokenStore.set(key, value); return key; }
-function parseKnowledgeToken<T>(token: string, label: string): T { const value = knowledgeTokenStore.get(token); if (value === undefined) throw new Error(`${label} is invalid or expired. Request a fresh scope instead of reconstructing it.`); return value as T; }
+const knowledgeTokenDir = path.join(tmpdir(), "pi-harness-tokens");
+function knowledgeToken(value: unknown) { const key = createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 24); const file = path.join(knowledgeTokenDir, key); if (!existsSync(file)) { mkdirSync(knowledgeTokenDir, { recursive: true }); writeFileSync(file, JSON.stringify(value), "utf8"); }
+ return key; }
+function parseKnowledgeToken<T>(token: string, label: string): T { const file = path.join(knowledgeTokenDir, token); if (!existsSync(file)) throw new Error(`${label} is invalid or expired. Request a fresh scope instead of reconstructing it.`); return JSON.parse(readFileSync(file, "utf8")) as T; }
 function historyGit(dir: string, args: string[]) { return execFileSync("git", ["-C", dir, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 16 * 1024 * 1024 }).trim(); }
 function historyDigest(project: string, baseCommit: string | null, targetCommit: string, commits: string[]) { return createHash("sha256").update(JSON.stringify({ version: 1, project, baseCommit, targetCommit, commits })).digest("hex"); }
 function managedProject(config: Manifest, name: string) { const matches = (config.projects ?? []).filter((project) => project.name.toLowerCase() === name.trim().toLowerCase()); if (matches.length !== 1) throw new Error(`Unknown or ambiguous managed project: ${name}.`); return matches[0]!; }
