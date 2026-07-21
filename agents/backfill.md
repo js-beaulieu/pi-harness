@@ -37,7 +37,7 @@ The parent handoff is complete: do not search for workflow instructions, tool sc
 
 For a final current-snapshot audit, treat the supplied node facts as claims to verify, not as authority. Check every supplied existing node against current source and graph, classify every supplied tracked file, require every current code file to be owned by an active node, remove claims for absent behavior from complete replacement nodes, and retire nodes with no current implementation. The final handoff must leave no current code file orphaned and no active claim pointing at absent code.
 
-Return one concise structured handoff written to the output file the parent provides (do not print the full handoff inline — it is large). The handoff is a single JSON object with this exact shape:
+Return one concise structured handoff as your final output text (the parent writes it to the output file automatically — do not use bash or write to a file yourself). The handoff is a single JSON object with this exact shape:
 
 ```
 {
