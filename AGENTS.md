@@ -22,4 +22,4 @@ Use `apply_patch` for source edits. Preserve user-owned workspace files and avoi
 
 ## Workflow invariants
 
-The parent session orchestrates but does not edit product checkouts. Canonical `docs/` are accessed only through the workspace knowledge tools. Session worktrees are created through `/workspace:session`, use manifest-provided setup and cleanup commands, and are removed only after a clean-state check. Never add force-push or merge behavior.
+The parent session orchestrates but does not edit product checkouts. Canonical `docs/` are accessed only through the workspace knowledge tools. Session worktrees are created and entered automatically through `/workspace:plan`, use manifest-provided setup and cleanup commands, and are removed only after a clean-state check. Never add force-push or merge behavior.

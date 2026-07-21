@@ -13,8 +13,10 @@ Clone or initialize product repositories beneath `projects/`, then open Pi and a
 /workspace:code
 /workspace:code <review feedback>
 /workspace:done
+/workspace:continue <id>
+/workspace:cleanup <id>
 ```
 
-For isolated concurrent work, run `/workspace:session <subject>` from this root. It creates `worktrees/<session>/` with a coordination worktree and matching product worktrees, then runs any configured setup commands. Hooks run directly from the extension: `$PWD` is the new worktree, `PH_WORKSPACE_BASE` is this primary root, and project hooks also receive `PH_PROJECT_BASE`. This makes a project hook such as `cp "$PH_PROJECT_BASE/.env" .env` reliable without Git path discovery. Open Pi there and run the supplied `/workspace:continue <id>` command before planning. When the session is merged or no longer needed, `/workspace:session cleanup <session>` runs teardown and removes only clean worktrees; its branches remain available.
+`/workspace:plan <subject>` creates `worktrees/<workflow>/` with a coordination worktree and matching product worktrees, forks the current conversation there, and switches Pi into it automatically. Hooks run directly from the extension: `$PWD` is the new worktree, `PH_WORKSPACE_BASE` is this primary root, and project hooks also receive `PH_PROJECT_BASE`. This makes a project hook such as `cp "$PH_PROJECT_BASE/.env" .env` reliable without Git path discovery. Use `/workspace:continue <id>` to return to a saved workflow. When it is merged or no longer needed, run `/workspace:cleanup <id>` from this primary checkout; teardown removes only clean worktrees and leaves branches available.
 
 The parent session coordinates; workers edit product checkouts. The parent alone maintains canonical `docs/` through `workspace_knowledge`. Planning starts with knowledge orientation: read relevant Project Architecture References, Contracts, and Decisions, then use `codebase-memory`, then inspect code selectively. Workspace documentation/configuration is committed on its own workflow branch and receives a PR whenever this root has usable GitHub access. Local-only or inaccessible repositories may complete review without a PR.

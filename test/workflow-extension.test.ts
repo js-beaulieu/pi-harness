@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import workspaceFlow from "../extensions/workflow.ts";
 
 async function workspace(run: (root: string) => Promise<void>) {
@@ -17,7 +18,7 @@ function harness() {
   workspaceFlow({ registerCommand: (name: string, value: any) => commands.set(name, value), registerTool: (value: any) => tools.set(value.name, value), on: (name: string, handler: any) => events.set(name, handler), events: { on: (name: string, handler: any) => asks.set(name, handler) }, setSessionName: () => undefined, sendUserMessage: (message: string, options: any) => messages.push({ message, options }) } as any);
   return { commands, tools, events, asks, messages };
 }
-const ctx = (cwd: string) => ({ cwd, sessionManager: { getSessionId: () => "session-a" }, ui: { notify: () => undefined } });
+const ctx = (cwd: string) => ({ cwd, sessionManager: { getSessionId: () => "session-a" }, ui: { notify: () => undefined, confirm: async () => true } });
 
 test("onboarding discovers only existing local projects and requires approval", async () => workspace(async (root) => {
   await mkdir(path.join(root, "projects", "api"), { recursive: true });
@@ -84,9 +85,10 @@ test("review does not require a PR for a local-only workspace", async () => work
 }));
 
 test("review requires workspace documentation to be committed", async () => workspace(async (root) => {
+  const h = harness(); await h.commands.get("workspace:plan").handler("Local change", ctx(root));
   execFileSync("git", ["init", "-q", "-b", "main", root]);
   execFileSync("git", ["-C", root, "switch", "-q", "-c", "feat/local-change"]);
-  const h = harness(); await h.commands.get("workspace:plan").handler("Local change", ctx(root)); await h.commands.get("workspace:code").handler("", ctx(root));
+  await h.commands.get("workspace:code").handler("", ctx(root));
   await h.tools.get("workspace_workflow").execute("id", { action: "record_checks", ciPassed: true, codeIndexed: true }, undefined, undefined, ctx(root));
   await assert.rejects(h.tools.get("workspace_workflow").execute("id", { action: "enter_review" }, undefined, undefined, ctx(root)), /Commit all non-ignored coordination-workspace changes/);
 }));
@@ -116,17 +118,23 @@ test("onboard command is a local-only conversation", async () => workspace(async
   assert.match(h.messages[0].message, /local-first/); await assert.rejects(h.commands.get("workspace:onboard").handler("owner/repo", ctx(root)), /takes no sources/);
 }));
 
-test("a workspace session creates isolated coordination and product worktrees that can be reattached", async () => workspace(async (root) => {
+test("workspace plan creates and enters an isolated session that continue can re-enter", async () => workspace(async (root) => {
   await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\n  worktrees_directory: worktrees\n  setup: [\"test -n \\\"$PH_WORKSPACE_BASE\\\" && test -z \\\"${PI_SUBAGENT_CHILD:-}\\\" && touch .workspace-session-marker\"]\n  cleanup: [\"rm -f .workspace-session-marker\"]\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n    setup: [\"test -n \\\"$PH_PROJECT_BASE\\\" && test -z \\\"${PI_SUBAGENT_CHILD:-}\\\" && touch .project-session-marker\"]\n    cleanup: [\"rm -f .project-session-marker\"]\n");
   await writeFile(path.join(root, ".gitignore"), ".pi/\n.mcp.json\n.pi-harness/\nprojects/\nworktrees/\n");
   execFileSync("git", ["init", "-q", "-b", "main", root]); execFileSync("git", ["-C", root, "config", "user.email", "test@example.com"]); execFileSync("git", ["-C", root, "config", "user.name", "Test User"]); execFileSync("git", ["-C", root, "add", "workspace.yaml", ".gitignore"]); execFileSync("git", ["-C", root, "commit", "-qm", "workspace"]);
   const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true }); await writeFile(path.join(api, "service.ts"), "export const service = true;\n");
   execFileSync("git", ["init", "-q", "-b", "main", api]); execFileSync("git", ["-C", api, "config", "user.email", "test@example.com"]); execFileSync("git", ["-C", api, "config", "user.name", "Test User"]); execFileSync("git", ["-C", api, "add", "service.ts"]); execFileSync("git", ["-C", api, "commit", "-qm", "api"]);
-  const h = harness(); const result = await h.tools.get("workspace_session").execute("id", { action: "create", subject: "Add session isolation" }, undefined, undefined, ctx(root)); const sessionRoot = path.join(root, result.details.path);
-  assert.equal(existsSync(path.join(sessionRoot, "workspace.yaml")), true); assert.equal(existsSync(path.join(sessionRoot, "projects", "api", "service.ts")), true);
-  assert.equal(existsSync(path.join(sessionRoot, ".workspace-session-marker")), true); assert.equal(existsSync(path.join(sessionRoot, "projects", "api", ".project-session-marker")), true);
-  assert.equal(execFileSync("git", ["-C", sessionRoot, "branch", "--show-current"], { encoding: "utf8" }).trim(), "feat/session-isolation"); assert.equal(execFileSync("git", ["-C", path.join(sessionRoot, "projects", "api"), "branch", "--show-current"], { encoding: "utf8" }).trim(), "feat/session-isolation");
-  const resumed = { ...ctx(sessionRoot), sessionManager: { getSessionId: () => "session-b" } }; await h.commands.get("workspace:continue").handler(result.details.workflowId, resumed); const state = await h.tools.get("workspace_workflow").execute("id", { action: "status" }, undefined, undefined, resumed);
-  assert.equal(state.details.sessionId, "session-b"); assert.deepEqual(state.details.sessionWorktree.products, { api: "projects/api" });
-  await h.tools.get("workspace_session").execute("id", { action: "cleanup", session: result.details.path }, undefined, undefined, ctx(root)); assert.equal(existsSync(sessionRoot), false);
+  const previousAgentDir = process.env.PI_CODING_AGENT_DIR; process.env.PI_CODING_AGENT_DIR = path.join(root, ".pi", "test-agent");
+  try {
+    const source = SessionManager.create(root, path.join(root, ".pi", "source-sessions")); source.appendSessionInfo("test source"); source.appendMessage({ role: "assistant", content: [], timestamp: Date.now() } as any); const switches: Array<{ file: string; cwd: string; session: SessionManager }> = []; const continued: string[] = [];
+    const commandCtx = { cwd: root, sessionManager: source, ui: { notify: () => undefined }, waitForIdle: async () => undefined, switchSession: async (file: string, options?: any) => { const session = SessionManager.open(file); switches.push({ file, cwd: session.getCwd(), session }); await options?.withSession?.({ cwd: session.getCwd(), sessionManager: session, ui: { notify: () => undefined }, sendUserMessage: async (message: string) => { continued.push(message); } }); return { cancelled: false }; } };
+    const h = harness(); assert.equal(h.commands.has("workspace:session"), false); await h.commands.get("workspace:plan").handler("Add session isolation", commandCtx); assert.equal(existsSync(source.getSessionFile()!), true);
+    const listed = await h.tools.get("workspace_session").execute("id", { action: "list" }, undefined, undefined, ctx(root)); assert.equal(listed.details.sessions.length, 1); const sessionRoot = path.join(root, listed.details.sessions[0]);
+    assert.equal(switches[0]?.cwd, sessionRoot); assert.match(continued[0] ?? "", /plan phase/); assert.equal(existsSync(path.join(sessionRoot, "workspace.yaml")), true); assert.equal(existsSync(path.join(sessionRoot, "projects", "api", "service.ts")), true);
+    assert.equal(existsSync(path.join(sessionRoot, ".workspace-session-marker")), true); assert.equal(existsSync(path.join(sessionRoot, "projects", "api", ".project-session-marker")), true);
+    assert.equal(execFileSync("git", ["-C", sessionRoot, "branch", "--show-current"], { encoding: "utf8" }).trim(), "feat/session-isolation"); assert.equal(execFileSync("git", ["-C", path.join(sessionRoot, "projects", "api"), "branch", "--show-current"], { encoding: "utf8" }).trim(), "feat/session-isolation");
+    const active = { ...ctx(sessionRoot), sessionManager: switches[0]!.session }; const state = await h.tools.get("workspace_workflow").execute("id", { action: "status" }, undefined, undefined, active); assert.equal(state.details.sessionId, switches[0]!.session.getSessionId()); assert.deepEqual(state.details.sessionWorktree.products, { api: "projects/api" });
+    await h.commands.get("workspace:continue").handler(state.details.id, commandCtx); assert.equal(switches.at(-1)?.cwd, sessionRoot); assert.match(continued.at(-1) ?? "", /Resume workflow/);
+    await h.commands.get("workspace:cleanup").handler(state.details.id, commandCtx); assert.equal(existsSync(sessionRoot), false);
+  } finally { if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousAgentDir; }
 }));
