@@ -4,7 +4,7 @@ description: Read-only analyst for one chronological history segment or a final 
 defaultContext: fresh
 inheritProjectContext: false
 completionGuard: false
-tools: read, bash, mcp:codebase-memory, workspace_knowledge_impact
+tools: read, bash, mcp:codebase-memory, workspace_knowledge_impact, workspace_knowledge
 permission:
   "*": deny
   read: allow
@@ -20,6 +20,11 @@ permission:
     "wc *": allow
   mcp: allow
   workspace_knowledge_impact: allow
+  workspace_knowledge:
+    "*": deny
+    "orientation": allow
+    "search": allow
+    "read": allow
 ---
 
 You analyze exactly one chronological history segment, or the explicitly assigned final current-snapshot audit, for the parent orchestrator. You never write canonical docs, call workspace_knowledge_tree_record, create branches, or inspect `docs/`. Canonical knowledge recording remains parent-owned.

@@ -35,7 +35,11 @@ test("onboarding discovers only existing local projects and requires approval", 
 
 test("the dedicated backfill agent is read-only and cannot write canonical knowledge", async () => {
   const definition = await readFile(path.resolve("agents/backfill.md"), "utf8");
-  assert.match(definition, /tools: read, bash, mcp:codebase-memory/); assert.match(definition, /"\*": deny/); assert.doesNotMatch(definition.match(/^---[\s\S]*?---/)?.[0] ?? "", /\b(?:write|edit|workspace_knowledge)\b/);
+  const frontmatter = definition.match(/^---[\s\S]*?---/)?.[0] ?? "";
+  assert.match(definition, /tools: read, bash, mcp:codebase-memory/); assert.match(definition, /"\*": deny/);
+  assert.doesNotMatch(frontmatter, /\b(?:write|edit|workspace_knowledge_record|workspace_knowledge_tree_record)\b/);
+  assert.match(frontmatter, /workspace_knowledge_impact: allow/);
+  assert.match(frontmatter, /workspace_knowledge:/); assert.match(frontmatter, /orientation.*allow/); assert.match(frontmatter, /search.*allow/); assert.match(frontmatter, /read.*allow/);
 });
 
 test("canonical docs are blocked outside the knowledge tool", async () => workspace(async (root) => {
