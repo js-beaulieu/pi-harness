@@ -13,6 +13,9 @@
     "workspace_workflow": "allow",
     "workspace_session": "allow",
     "workspace_knowledge": "allow",
+    "workspace_knowledge_record": "allow",
+    "workspace_knowledge_tree_record": "allow",
+    "workspace_knowledge_impact": "allow",
     "workspace_onboarding": "allow",
     "ask_user": "allow"
   }

@@ -1,3 +1,5 @@
 # Canonical knowledge
 
-Pi maintains Decisions, Plans, Tasks, Contracts, and References here through `workspace_knowledge`. Each product’s `Reference` titled `Project architecture — <project>` is the durable pickup document: use it with Contracts and Decisions before exploring source code.
+Pi maintains Decisions, Plans, Tasks, Contracts, References, and progressive-disclosure project knowledge trees here through `workspace_knowledge`. Start from a project's generated Knowledge map, follow the narrowest capability/component node, then use related Architecture References, Contracts, and Decisions before exploring source.
+
+`/workspace:knowledge-backfill` processes a contiguous oldest-to-newest sequence of estimated history segments with a dedicated read-only analyst, recording stable what/why/how/where nodes after every segment. One complete multi-project plan is confirmed before processing; segment splits and adjacent merges are supported without changing chronology. A mandatory final snapshot pass checks every current file and existing node, anchors every code file, and removes obsolete guidance. Generated knowledge never contains commit narration, and only a current-snapshot-validated map is ready for development. `workspace:code` records equivalent session-scoped nodes, and review requires its checklist.

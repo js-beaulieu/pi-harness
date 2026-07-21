@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | `workspace` | documentation, product-checkout, and session-worktree directories; workflow naming defaults | workflow extension and managed scripts |
 | `projects` | repositories or existing local paths, dependencies, CI-equivalent commands | clone/status/index tasks and PR ordering |
-| `agents` | orchestrator and worker model pins | `.pi/settings.json` |
+| `agents` | orchestrator, implementation, exploration, and read-only backfill model pins | `.pi/settings.json` |
 | `pi.packages` | companion Pi package sources and pinned versions | `.pi/settings.json` |
 | `code_graph` | mandatory local code-graph server command and lifecycle | `.mcp.json` and index tasks |
 | `permissions` | default shell, MCP, and external-directory posture | `.pi/extensions/pi-permission-system/config.json` |

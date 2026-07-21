@@ -12,6 +12,7 @@ agents:
   impl: { model: bifrost/code }
   impl-lite: { model: bifrost/code-lite }
   explore: { model: bifrost/main }
+  backfill: { model: bifrost/main }
 
 subagents:
   async_by_default: true

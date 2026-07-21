@@ -13,5 +13,6 @@ Use this skill after the human has placed repositories under `projects/`. This i
 4. Present the complete proposed `workspace.yaml`, including `workspace.setup`, `workspace.cleanup`, and every project's `setup` / `cleanup` arrays. Do not infer dependencies, CI commands, or lifecycle commands without evidence or confirmation.
 5. Immediately stage that exact manifest with `workspace_onboarding(action="propose")`; staging is not approval and does not change the workspace.
 6. Ask exactly one approval question with context `pi-harness:onboarding-apply:<token>` and exactly `Apply now`, `Revise proposal`, or `Cancel` choices. This is the only approval gate. Apply only after the user selects `Apply now`; on `Revise proposal`, revise and restage before asking again.
+7. After a successful apply, call `workspace_knowledge(action="history_status")`, summarize each project's commits/files/line scale in plain language, and offer `/workspace:knowledge-backfill` as an optional next step. Do not start it without an explicit yes.
 
 Onboarding never creates, clones, or modifies product repositories. It writes only the approved manifest and generated configuration.
