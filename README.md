@@ -13,10 +13,10 @@ The enforced lifecycle is `plan → code → review → done`.
 Install from a tagged public GitHub release directly—no npmjs or GitHub Packages registry is required:
 
 ```sh
-npx --yes github:js-beaulieu/pi-harness#v0.1.3 init
+npx --yes github:js-beaulieu/pi-harness#v0.1.4 init
 ```
 
-The command is idempotent. It creates/adopts the coordination root, initializes it as a Git repository on `main` when needed, commits the initial workspace state so the first `/workspace:plan` can create a session worktree, writes local `.pi/settings.json` pinned to that tag, and creates `projects/`, `docs/`, `workspace.yaml`, mise, and Task files. It does not start Pi, so it works equally with Paseo, the Pi TUI, and other Pi hosts. `init` refuses to run in a non-empty directory that is not already a pi-harness workspace; pass `--force` to override, for example `npx --yes github:js-beaulieu/pi-harness#v0.1.3 init existing-dir --force`.
+The command is idempotent. It creates/adopts the coordination root, initializes it as a Git repository on `main` when needed, commits the initial workspace state so the first `/workspace:plan` can create a session worktree, writes local `.pi/settings.json` pinned to that tag, and creates `projects/`, `docs/`, `workspace.yaml`, mise, and Task files. It does not start Pi, so it works equally with Paseo, the Pi TUI, and other Pi hosts. `init` refuses to run in a non-empty directory that is not already a pi-harness workspace; pass `--force` to override, for example `npx --yes github:js-beaulieu/pi-harness#v0.1.4 init existing-dir --force`.
 
 For local package development, pass a local Pi package source explicitly, for example `pi-harness init . --source ../../pi-harness`. This prevents a test workspace from trying to fetch an unpublished Git tag.
 
