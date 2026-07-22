@@ -13,10 +13,10 @@ The enforced lifecycle is `plan → code → review → done`.
 Install from a tagged public GitHub release directly—no npmjs or GitHub Packages registry is required:
 
 ```sh
-npx --yes github:js-beaulieu/pi-harness#v0.1.4 init
+npx --yes github:js-beaulieu/pi-harness#v0.1.5 init
 ```
 
-The command is idempotent. It creates/adopts the coordination root, initializes it as a Git repository on `main` when needed, commits the initial workspace state so the first `/workspace:plan` can create a session worktree, writes local `.pi/settings.json` pinned to that tag, and creates `projects/`, `docs/`, `workspace.yaml`, mise, and Task files. It does not start Pi, so it works equally with Paseo, the Pi TUI, and other Pi hosts. `init` refuses to run in a non-empty directory that is not already a pi-harness workspace; pass `--force` to override, for example `npx --yes github:js-beaulieu/pi-harness#v0.1.4 init existing-dir --force`.
+The command is idempotent. It creates/adopts the coordination root, initializes it as a Git repository on `main` when needed, commits the initial workspace state so the first `/workspace:plan` can create a session worktree, writes local `.pi/settings.json` pinned to that tag, and creates `projects/`, `docs/`, `workspace.yaml`, mise, and Task files. It does not start Pi, so it works equally with Paseo, the Pi TUI, and other Pi hosts. `init` refuses to run in a non-empty directory that is not already a pi-harness workspace; pass `--force` to override, for example `npx --yes github:js-beaulieu/pi-harness#v0.1.5 init existing-dir --force`.
 
 For local package development, pass a local Pi package source explicitly, for example `pi-harness init . --source ../../pi-harness`. This prevents a test workspace from trying to fetch an unpublished Git tag.
 
@@ -60,7 +60,7 @@ Pi commits workspace knowledge/configuration on its own branch before review. A 
 - code-graph lifecycle (or an explicitly overridden command); and
 - permission defaults.
 
-`/workspace:sync` regenerates `.pi-harness/`, managed Pi settings, MCP configuration, and permission configuration. It preserves `workspace.yaml`, `docs/`, root instructions, and unrelated Pi/MCP settings.
+`/workspace:sync` regenerates `.pi-harness/`, managed Pi settings, MCP configuration, and permission configuration, and bumps the pinned `pi-harness` git-source version in `.pi/settings.json` to match the running package. It preserves `workspace.yaml`, `docs/`, root instructions, and unrelated Pi/MCP settings. To upgrade, bump the pin in `.pi/settings.json` to a newer tag, restart Pi, then run `/workspace:sync` — or run `/workspace:sync X.Y.Z` with a version higher than the installed one to bump and regenerate in one step.
 
 `docs/` is canonical authored knowledge. Only the parent session accesses it through the workspace knowledge tools; direct native reads/writes and shell access are blocked. Start with `workspace_knowledge` orientation, follow the relevant project Knowledge map to the narrowest capability/component node, then read related References, Contracts, and Decisions before exploring code. `workspace_knowledge_record` records factual named sections, creates valid structured entries, preserves unnamed sections, and leaves wording-only or formatting-only changes untouched.
 
