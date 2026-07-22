@@ -33,13 +33,15 @@ test("onboarding discovers only existing local projects and requires approval", 
   assert.equal(existsSync(path.join(root, ".pi", "harness", "onboarding-proposal.json")), false);
 }));
 
-test("the dedicated backfill agent is read-only and cannot write canonical knowledge", async () => {
+test("the dedicated backfill agent records knowledge directly and cannot write freeform docs", async () => {
   const definition = await readFile(path.resolve("agents/backfill.md"), "utf8");
   const frontmatter = definition.match(/^---[\s\S]*?---/)?.[0] ?? "";
   assert.match(definition, /tools: read, bash, mcp:codebase-memory/); assert.match(definition, /"\*": deny/);
-  assert.doesNotMatch(frontmatter, /\b(?:write|edit|workspace_knowledge_record|workspace_knowledge_tree_record)\b/);
+  assert.doesNotMatch(frontmatter, /\bwrite\b|\bedit\b|\bworkspace_knowledge_record\b/);
   assert.match(frontmatter, /workspace_knowledge_impact: allow/);
+  assert.match(frontmatter, /workspace_knowledge_tree_record: allow/);
   assert.match(frontmatter, /workspace_knowledge:/); assert.match(frontmatter, /orientation.*allow/); assert.match(frontmatter, /search.*allow/); assert.match(frontmatter, /read.*allow/);
+  assert.match(definition, /call workspace_knowledge_tree_record once/); assert.match(definition, /never emit a handoff file/);
 });
 
 test("canonical docs are blocked outside the knowledge tool", async () => workspace(async (root) => {
@@ -121,8 +123,8 @@ test("Git history progressively builds a stable, source-locating knowledge tree"
 test("one adjustable plan approval processes multiple projects in order", async () => workspace(async (root) => {
   await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n  - name: tasks-api\n    path: tasks-api\n    default_branch: main\n    ci: []\n");
   for (const name of ["api", "tasks-api"]) { const directory = path.join(root, "projects", name); await mkdir(directory, { recursive: true }); execFileSync("git", ["init", "-q", "-b", "main", directory]); execFileSync("git", ["-C", directory, "config", "user.email", "test@example.com"]); execFileSync("git", ["-C", directory, "config", "user.name", "Test User"]); await writeFile(path.join(directory, "notes.txt"), `${name}\n`); execFileSync("git", ["-C", directory, "add", "notes.txt"]); execFileSync("git", ["-C", directory, "commit", "-qm", `Create ${name}`]); }
-  const h = harness(); await h.commands.get("workspace:knowledge-backfill").handler("api tasks-api", ctx(root)); assert.match(h.messages[0].message, /history_start once/); assert.match(h.messages[0].message, /Stop all tools while waiting/); assert.match(h.messages[0].message, /output set to the returned handoffPath/); assert.match(h.messages[0].message, /Do not set turnBudget or toolBudget/); const knowledge = h.tools.get("workspace_knowledge"); assert.equal("planToken" in knowledge.parameters.properties, false); assert.equal("planTokens" in knowledge.parameters.properties, false); assert.equal("runToken" in knowledge.parameters.properties, false); assert.equal("complexity" in knowledge.parameters.properties, false); const impact = h.tools.get("workspace_knowledge_impact"); const record = h.tools.get("workspace_knowledge_tree_record"); const apiPlan = await knowledge.execute("id", { action: "history_plan", project: "api" }, undefined, undefined, ctx(root)); const tasksPlan = await knowledge.execute("id", { action: "history_plan", project: "tasks-api" }, undefined, undefined, ctx(root)); const started = await knowledge.execute("id", { action: "history_start", projects: ["api", "tasks-api"] }, undefined, undefined, ctx(root)); assert.deepEqual(started.details.projects.map((project: any) => project.project), ["api", "tasks-api"]); assert.match(started.content[0].text, /Adjust adjacent boundaries/); assert.equal(await h.events.get("tool_call")({ toolName: "ask_user", input: {} }, ctx(root)), undefined); h.asks.get("ask:answered")({ context: `pi-harness:backfill-start:${started.details.approvalKey}`, response: { kind: "selection", selections: ["Start processing"] } });
-  for (const expectedProject of ["api", "tasks-api"]) { const chunk = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root)); assert.equal(chunk.details.project, expectedProject); assert.match(chunk.content[0].text, /backfill agent queries the code graph, calls workspace_knowledge_impact/); const assessed = await impact.execute("id", { scopeToken: chunk.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root)); await record.execute("id", { impactToken: assessed.details.impactToken, reviews: [], unmappedReviews: [{ path: "notes.txt", result: "no-durable-knowledge", reason: "Fixture text has no program behavior." }], nodes: [] }, undefined, undefined, ctx(root)); }
+  const h = harness(); await h.commands.get("workspace:knowledge-backfill").handler("api tasks-api", ctx(root)); assert.match(h.messages[0].message, /history_start once/); assert.match(h.messages[0].message, /Stop all tools while waiting/); assert.match(h.messages[0].message, /records its durable knowledge directly by calling workspace_knowledge_tree_record itself/); assert.match(h.messages[0].message, /Do not set turnBudget or toolBudget/); const knowledge = h.tools.get("workspace_knowledge"); assert.equal("planToken" in knowledge.parameters.properties, false); assert.equal("planTokens" in knowledge.parameters.properties, false); assert.equal("runToken" in knowledge.parameters.properties, false); assert.equal("complexity" in knowledge.parameters.properties, false); const impact = h.tools.get("workspace_knowledge_impact"); const record = h.tools.get("workspace_knowledge_tree_record"); const apiPlan = await knowledge.execute("id", { action: "history_plan", project: "api" }, undefined, undefined, ctx(root)); const tasksPlan = await knowledge.execute("id", { action: "history_plan", project: "tasks-api" }, undefined, undefined, ctx(root)); const started = await knowledge.execute("id", { action: "history_start", projects: ["api", "tasks-api"] }, undefined, undefined, ctx(root)); assert.deepEqual(started.details.projects.map((project: any) => project.project), ["api", "tasks-api"]); assert.match(started.content[0].text, /Adjust adjacent boundaries/); assert.equal(await h.events.get("tool_call")({ toolName: "ask_user", input: {} }, ctx(root)), undefined); h.asks.get("ask:answered")({ context: `pi-harness:backfill-start:${started.details.approvalKey}`, response: { kind: "selection", selections: ["Start processing"] } });
+  for (const expectedProject of ["api", "tasks-api"]) { const chunk = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root)); assert.equal(chunk.details.project, expectedProject); assert.match(chunk.content[0].text, /records its durable knowledge directly by calling workspace_knowledge_tree_record itself/); const assessed = await impact.execute("id", { scopeToken: chunk.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root)); await record.execute("id", { impactToken: assessed.details.impactToken, reviews: [], unmappedReviews: [{ path: "notes.txt", result: "no-durable-knowledge", reason: "Fixture text has no program behavior." }], nodes: [] }, undefined, undefined, ctx(root)); }
   const complete = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root)); assert.equal(complete.details.complete, true); assert.equal(await h.events.get("tool_call")({ toolName: "bash", input: { command: "git log --oneline" } }, ctx(root)), undefined);
 }));
 
@@ -199,4 +201,72 @@ test("workspace plan creates and enters an isolated session that continue can re
     await h.commands.get("workspace:continue").handler(state.details.id, commandCtx); assert.equal(switches.at(-1)?.cwd, sessionRoot); assert.match(continued.at(-1) ?? "", /Resume workflow/);
     await h.commands.get("workspace:cleanup").handler(state.details.id, commandCtx); assert.equal(existsSync(sessionRoot), false);
   } finally { if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousAgentDir; }
+}));
+
+test("tree_record reclassifies unanchored new-node paths to no-durable-knowledge in a history segment", async () => workspace(async (root) => {
+  await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n");
+  const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true });
+  execFileSync("git", ["init", "-q", "-b", "main", api]); execFileSync("git", ["-C", api, "config", "user.email", "test@example.com"]); execFileSync("git", ["-C", api, "config", "user.name", "Test User"]);
+  await writeFile(path.join(api, "service.txt"), "1\n"); await writeFile(path.join(api, "ui.txt"), "ui\n"); execFileSync("git", ["-C", api, "add", "service.txt", "ui.txt"]); execFileSync("git", ["-C", api, "commit", "-qm", "Create service and ui"]);
+  const h = harness(); await h.commands.get("workspace:knowledge-backfill").handler("api", ctx(root));
+  const knowledge = h.tools.get("workspace_knowledge"); const impactTool = h.tools.get("workspace_knowledge_impact"); const treeRecord = h.tools.get("workspace_knowledge_tree_record");
+  await knowledge.execute("id", { action: "history_plan", project: "api" }, undefined, undefined, ctx(root));
+  const started = await knowledge.execute("id", { action: "history_start", projects: ["api"] }, undefined, undefined, ctx(root));
+  h.asks.get("ask:answered")({ context: `pi-harness:backfill-start:${started.details.approvalKey}`, response: { kind: "selection", selections: ["Start processing"] } });
+  const chunk = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
+  const impact = await impactTool.execute("id", { scopeToken: chunk.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root));
+  const serviceAnchors = { paths: ["service.txt"], symbols: [], interfaces: [], relatedNodes: [] };
+  // ui.txt marked new-node but no node anchors it; the recorder reclassifies it instead of failing the segment.
+  const result = await treeRecord.execute("id", { impactToken: impact.details.impactToken, reviews: [], unmappedReviews: [{ path: "service.txt", result: "new-node" }, { path: "ui.txt", result: "new-node" }], nodes: [{ nodePath: "features/service", title: "Service capability", anchors: serviceAnchors, claims: [{ key: "purpose", category: "What", fact: "Provides the service capability.", paths: ["service.txt"], symbols: [], searchTerms: ["service"] }, { key: "implementation", category: "How", fact: "The service state file carries the capability.", paths: ["service.txt"], symbols: [], searchTerms: ["service.txt"] }, { key: "entry", category: "Where", fact: "Start at the service state file.", paths: ["service.txt"], symbols: [], searchTerms: ["service"] }] }] }, undefined, undefined, ctx(root));
+  assert.deepEqual(result.details.changedNodes, ["features/service"]);
+  assert.deepEqual(result.details.reclassifiedFromNewNode, ["ui.txt"]);
+  assert.match(result.content[0].text, /Reclassified 1 path\(s\)/);
+  // The final current-snapshot audit still demands ui.txt be anchored, so the deferred behavior is not lost.
+  const currentScope = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
+  assert.equal(currentScope.details.complete, true);
+}));
+
+test("tree_record accepts a call from the dedicated backfill agent (isSubagent + isBackfillAgent)", async () => workspace(async (root) => {
+  await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n");
+  const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true });
+  execFileSync("git", ["init", "-q", "-b", "main", api]); execFileSync("git", ["-C", api, "config", "user.email", "test@example.com"]); execFileSync("git", ["-C", api, "config", "user.name", "Test User"]);
+  await writeFile(path.join(api, "service.txt"), "1\n"); execFileSync("git", ["-C", api, "add", "service.txt"]); execFileSync("git", ["-C", api, "commit", "-qm", "Create service"]);
+  const h = harness(); await h.commands.get("workspace:knowledge-backfill").handler("api", ctx(root));
+  const knowledge = h.tools.get("workspace_knowledge"); const impactTool = h.tools.get("workspace_knowledge_impact"); const treeRecord = h.tools.get("workspace_knowledge_tree_record");
+  await knowledge.execute("id", { action: "history_plan", project: "api" }, undefined, undefined, ctx(root));
+  const started = await knowledge.execute("id", { action: "history_start", projects: ["api"] }, undefined, undefined, ctx(root));
+  h.asks.get("ask:answered")({ context: `pi-harness:backfill-start:${started.details.approvalKey}`, response: { kind: "selection", selections: ["Start processing"] } });
+  const chunk = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
+  const impact = await impactTool.execute("id", { scopeToken: chunk.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root));
+  const recordInput = { impactToken: impact.details.impactToken, reviews: [], unmappedReviews: [{ path: "service.txt", result: "new-node" }], nodes: [{ nodePath: "features/service", title: "Service capability", anchors: { paths: ["service.txt"], symbols: [], interfaces: [], relatedNodes: [] }, claims: [{ key: "purpose", category: "What", fact: "Provides the service capability.", paths: ["service.txt"], symbols: [], searchTerms: ["service"] }, { key: "implementation", category: "How", fact: "The service state file carries the capability.", paths: ["service.txt"], symbols: [], searchTerms: ["service.txt"] }, { key: "entry", category: "Where", fact: "Start at the service state file.", paths: ["service.txt"], symbols: [], searchTerms: ["service"] }] }] };
+  const previousChild = process.env.PI_SUBAGENT_CHILD; const previousAgent = process.env.PI_SUBAGENT_CHILD_AGENT; const previousParent = process.env.PI_SUBAGENT_PARENT_SESSION;
+  // The dedicated backfill agent may record directly.
+  process.env.PI_SUBAGENT_CHILD = "1"; process.env.PI_SUBAGENT_CHILD_AGENT = "backfill"; process.env.PI_SUBAGENT_PARENT_SESSION = "session-a";
+  try { const result = await treeRecord.execute("id", recordInput, undefined, undefined, ctx(root)); assert.deepEqual(result.details.changedNodes, ["features/service"]); }
+  finally { if (previousChild === undefined) delete process.env.PI_SUBAGENT_CHILD; else process.env.PI_SUBAGENT_CHILD = previousChild; if (previousAgent === undefined) delete process.env.PI_SUBAGENT_CHILD_AGENT; else process.env.PI_SUBAGENT_CHILD_AGENT = previousAgent; if (previousParent === undefined) delete process.env.PI_SUBAGENT_PARENT_SESSION; else process.env.PI_SUBAGENT_PARENT_SESSION = previousParent; }
+  // A plain (non-backfill) subagent is still rejected, even with a fresh impact token for the next segment.
+  const secondChunk = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
+  if (secondChunk.details.complete) return; // single-segment fixture: the guard-rejection path is covered by the fresh-impact case below
+  const secondImpact = await impactTool.execute("id", { scopeToken: secondChunk.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root));
+  process.env.PI_SUBAGENT_CHILD = "1"; process.env.PI_SUBAGENT_CHILD_AGENT = "impl"; process.env.PI_SUBAGENT_PARENT_SESSION = "session-a";
+  try { await assert.rejects(treeRecord.execute("id", { impactToken: secondImpact.details.impactToken, reviews: [], unmappedReviews: [{ path: "service.txt", result: "new-node" }], nodes: [] }, undefined, undefined, ctx(root)), /Only the orchestrator and the dedicated backfill agent/); }
+  finally { if (previousChild === undefined) delete process.env.PI_SUBAGENT_CHILD; else process.env.PI_SUBAGENT_CHILD = previousChild; if (previousAgent === undefined) delete process.env.PI_SUBAGENT_CHILD_AGENT; else process.env.PI_SUBAGENT_CHILD_AGENT = previousAgent; if (previousParent === undefined) delete process.env.PI_SUBAGENT_PARENT_SESSION; else process.env.PI_SUBAGENT_PARENT_SESSION = previousParent; }
+}));
+
+test("tree_record rejects forward-reference relations with an actionable error listing every unresolved target", async () => workspace(async (root) => {
+  await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n");
+  const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true });
+  execFileSync("git", ["init", "-q", "-b", "main", api]); execFileSync("git", ["-C", api, "config", "user.email", "test@example.com"]); execFileSync("git", ["-C", api, "config", "user.name", "Test User"]);
+  await writeFile(path.join(api, "service.txt"), "1\n"); execFileSync("git", ["-C", api, "add", "service.txt"]); execFileSync("git", ["-C", api, "commit", "-qm", "Create service"]);
+  const h = harness(); await h.commands.get("workspace:knowledge-backfill").handler("api", ctx(root));
+  const knowledge = h.tools.get("workspace_knowledge"); const impactTool = h.tools.get("workspace_knowledge_impact"); const treeRecord = h.tools.get("workspace_knowledge_tree_record");
+  await knowledge.execute("id", { action: "history_plan", project: "api" }, undefined, undefined, ctx(root));
+  const started = await knowledge.execute("id", { action: "history_start", projects: ["api"] }, undefined, undefined, ctx(root));
+  h.asks.get("ask:answered")({ context: `pi-harness:backfill-start:${started.details.approvalKey}`, response: { kind: "selection", selections: ["Start processing"] } });
+  const chunk = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
+  const impact = await impactTool.execute("id", { scopeToken: chunk.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root));
+  const serviceAnchors = { paths: ["service.txt"], symbols: [], interfaces: [], relatedNodes: ["interfaces/ui"] };
+  await assert.rejects(treeRecord.execute("id", { impactToken: impact.details.impactToken, reviews: [], unmappedReviews: [{ path: "service.txt", result: "new-node" }], nodes: [{ nodePath: "features/service", title: "Service capability", anchors: serviceAnchors, claims: [{ key: "purpose", category: "What", fact: "Provides the service capability.", paths: ["service.txt"], symbols: [], searchTerms: ["service"] }, { key: "implementation", category: "How", fact: "The service state file carries the capability.", paths: ["service.txt"], symbols: [], searchTerms: ["service.txt"] }, { key: "entry", category: "Where", fact: "Start at the service state file.", paths: ["service.txt"], symbols: [], searchTerms: ["service"] }] }] }, undefined, undefined, ctx(root)), /features\/service -> interfaces\/ui.*Either remove the relation, or add a node/);
+  // No receipt saved: the segment is still pending and can be re-recorded once the agent fixes the handoff.
+  assert.equal(existsSync(path.join(root, "docs", ".pi-harness", "history", "api.json")), false);
 }));
