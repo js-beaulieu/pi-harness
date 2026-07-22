@@ -13,6 +13,7 @@ const args = process.argv.slice(2);
 const [command = ""] = args;
 const sourceFlag = args.indexOf("--source");
 let destination = ".";
+let createdRepo = false;
 for (let index = 1; index < args.length; index += 1) {
   if (args[index] === "--source") { index += 1; continue; }
   destination = args[index]; break;
@@ -45,6 +46,7 @@ if (command !== "init") {
   report("Created user-owned workspace files.");
   if (!existsSync(path.join(root, ".git"))) {
     execFileSync("git", ["init", "-b", "main", root], { stdio: "ignore" });
+    createdRepo = true;
     report("Initialized the workspace Git repository on main.");
   }
   await mkdir(path.join(root, "projects"), { recursive: true }); await copyIfMissing(path.join(templates, "projects", ".gitkeep"), path.join(root, "projects", ".gitkeep"));
@@ -71,5 +73,10 @@ if (command !== "init") {
   for (const [name, config] of Object.entries(agents)) if (name !== "orchestrator" && config?.model) agentOverrides[name] = { ...(agentOverrides[name] ?? {}), model: config.model };
   await writeFile(settingsFile, JSON.stringify({ ...settings, packages: next, ...(agents.orchestrator?.model ? { defaultModel: agents.orchestrator.model } : {}), subagents: { ...(settings.subagents ?? {}), agentOverrides } }, null, 2) + "\n");
   report("Generated managed Pi, MCP, permission, and task configuration.");
+  if (createdRepo) {
+    execFileSync("git", ["-C", root, "add", "-A"], { stdio: "ignore" });
+    execFileSync("git", ["-C", root, "commit", "-m", "Initial pi-harness workspace", "--no-verify"], { stdio: "ignore" });
+    report("Committed the initial workspace state on main.");
+  }
   report("Initialization complete. Add local repositories under projects/, then open Pi in this directory and ask it to onboard the workspace.");
 }
