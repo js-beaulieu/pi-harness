@@ -1,23 +1,55 @@
 {
   "name": "pi-harness",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A manifest-driven multi-repository workflow for Pi",
   "license": "MIT",
   "type": "module",
   "packageManager": "pnpm@10.17.1",
-  "bin": { "pi-harness": "./bin/pi-harness.mjs" },
-  "files": ["bin/", "extensions/", "agents/", "chains/", "skills/", "prompts/", "templates/", "README.md"],
+  "bin": {
+    "pi-harness": "./bin/pi-harness.mjs"
+  },
+  "files": [
+    "bin/",
+    "extensions/",
+    "agents/",
+    "chains/",
+    "skills/",
+    "prompts/",
+    "templates/",
+    "README.md"
+  ],
   "scripts": {
     "lint": "node --experimental-strip-types --check extensions/workflow.ts",
     "test": "node --experimental-strip-types --test test/*.test.ts"
   },
   "pi": {
-    "extensions": ["./extensions/workflow.ts", "./node_modules/pi-subagents/src/extension/index.ts", "./node_modules/pi-ask-user/index.ts", "./node_modules/pi-mcp-adapter/index.ts"],
-    "skills": ["./skills", "./node_modules/pi-subagents/skills", "./node_modules/pi-ask-user/skills"],
-    "prompts": ["./prompts", "./node_modules/pi-subagents/prompts"]
+    "extensions": [
+      "./extensions/workflow.ts",
+      "./node_modules/pi-subagents/src/extension/index.ts",
+      "./node_modules/pi-ask-user/index.ts",
+      "./node_modules/pi-mcp-adapter/index.ts"
+    ],
+    "skills": [
+      "./skills",
+      "./node_modules/pi-subagents/skills",
+      "./node_modules/pi-ask-user/skills"
+    ],
+    "prompts": [
+      "./prompts",
+      "./node_modules/pi-subagents/prompts"
+    ]
   },
-  "pi-subagents": { "agents": ["./agents"], "chains": ["./chains"] },
-  "peerDependencies": { "@earendil-works/pi-coding-agent": "*" },
+  "pi-subagents": {
+    "agents": [
+      "./agents"
+    ],
+    "chains": [
+      "./chains"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
   "dependencies": {
     "@earendil-works/pi-tui": "^0.80.6",
     "codebase-memory-mcp": "0.9.0",

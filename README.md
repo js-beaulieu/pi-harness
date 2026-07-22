@@ -13,7 +13,7 @@ The enforced lifecycle is `plan → code → review → done`.
 Install from a tagged public GitHub release directly—no npmjs or GitHub Packages registry is required:
 
 ```sh
-npx --yes github:js-beaulieu/pi-harness#v0.1.0 init
+npx --yes github:js-beaulieu/pi-harness#v0.1.1 init
 ```
 
 The command is idempotent. It creates/adopts the coordination root, initializes it as a Git repository on `main` when needed, writes local `.pi/settings.json` pinned to that tag, and creates `projects/`, `docs/`, `workspace.yaml`, mise, and Task files. It does not start Pi, so it works equally with Paseo, the Pi TUI, and other Pi hosts.

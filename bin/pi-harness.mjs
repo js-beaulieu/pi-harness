@@ -40,7 +40,8 @@ if (command !== "init") {
   const copyIfMissing = async (from, to) => { if (existsSync(to)) return; await mkdir(path.dirname(to), { recursive: true }); await cp(from, to, { recursive: true }); };
   const report = (message) => process.stdout.write(`pi-harness: ${message}\n`);
   report(`Preparing workspace at ${root}.`);
-  for (const file of ["Taskfile.yml", "mise.toml", "package.json", "pnpm-workspace.yaml", "workspace.yaml", "AGENTS.md", "README.md", ".gitignore"]) await copyIfMissing(path.join(templates, file), path.join(root, file));
+  for (const file of ["Taskfile.yml", "mise.toml", "package.json", "pnpm-workspace.yaml", "workspace.yaml", "AGENTS.md", "README.md"]) await copyIfMissing(path.join(templates, file), path.join(root, file));
+  await copyIfMissing(path.join(templates, "gitignore"), path.join(root, ".gitignore"));
   report("Created user-owned workspace files.");
   if (!existsSync(path.join(root, ".git"))) {
     execFileSync("git", ["init", "-b", "main", root], { stdio: "ignore" });
