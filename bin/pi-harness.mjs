@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -16,8 +16,10 @@ let destination = ".";
 let createdRepo = false;
 for (let index = 1; index < args.length; index += 1) {
   if (args[index] === "--source") { index += 1; continue; }
+  if (args[index].startsWith("--")) continue;
   destination = args[index]; break;
 }
+const forceFlag = args.includes("--force");
 const source = process.env.PI_HARNESS_SOURCE ?? (sourceFlag >= 0 ? args[sourceFlag + 1] : undefined) ?? `git:github.com/js-beaulieu/pi-harness@v${pkg.version}`;
 const externalDirectoryPolicy = (settingsFile, packages, fallback = "ask") => {
   const policy = { "*": fallback, "/dev/null": "allow", "/tmp/*": "allow" };
@@ -34,12 +36,19 @@ const bundledGraphCommand = (graph = {}) => {
     : { command: graph.command, args: graph.args ?? [] };
 };
 if (command !== "init") {
-  console.error("Usage: pi-harness init [directory] [--source <Pi package source>]");
+  console.error("Usage: pi-harness init [directory] [--source <Pi package source>] [--force]");
   process.exitCode = 1;
 } else {
   const root = path.resolve(destination); const templates = path.join(packageRoot, "templates", "root");
   const copyIfMissing = async (from, to) => { if (existsSync(to)) return; await mkdir(path.dirname(to), { recursive: true }); await cp(from, to, { recursive: true }); };
   const report = (message) => process.stdout.write(`pi-harness: ${message}\n`);
+  const existingEntries = await readdir(root).catch(() => []);
+  const significant = existingEntries.filter((name) => name !== ".git");
+  const alreadyInitialized = existsSync(path.join(root, ".pi-harness", "manifest.json"));
+  if (significant.length && !alreadyInitialized && !forceFlag) {
+    console.error(`pi-harness: ${root} is not empty and is not a pi-harness workspace. Re-run with --force to initialize here anyway.`);
+    process.exit(1);
+  }
   report(`Preparing workspace at ${root}.`);
   for (const file of ["Taskfile.yml", "mise.toml", "package.json", "pnpm-workspace.yaml", "workspace.yaml", "AGENTS.md", "README.md"]) await copyIfMissing(path.join(templates, file), path.join(root, file));
   await copyIfMissing(path.join(templates, "gitignore"), path.join(root, ".gitignore"));
