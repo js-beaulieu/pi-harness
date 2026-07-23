@@ -51,7 +51,7 @@ function bundledGraphCommand(graph: Manifest["code_graph"] = {}) {
 }
 
 function compareVersion(a: string, b: string) { const pa = a.replace(/^v/, "").split(".").map(Number); const pb = b.replace(/^v/, "").split(".").map(Number); for (let i = 0; i < 3; i++) { const d = (pa[i] ?? 0) - (pb[i] ?? 0); if (d) return d; } return 0; }
-const HARNESS_SOURCE_PATTERN = /^git:github\.com:[^/]+\/pi-harness@/;
+const HARNESS_SOURCE_PATTERN = /^git:github\.com:[^/]+\/pi-harness@|^git:github\.com\/[^/]+\/pi-harness@/;
 async function sync(root: string, requestedVersion?: string) {
   const config = await manifest(root); const packageVersion = await version();
   const targetVersion = requestedVersion ? requestedVersion.replace(/^v/, "") : packageVersion;

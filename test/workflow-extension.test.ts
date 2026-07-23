@@ -273,7 +273,21 @@ test("tree_record rejects forward-reference relations with an actionable error l
   assert.equal(existsSync(path.join(root, "docs", ".pi-harness", "history", "api.json")), false);
 }));
 
-test("sync bumps the pinned pi-harness git source to the running version", async () => workspace(async (root) => {
+test("sync bumps the pinned pi-harness git source (slash form) to the running version", async () => workspace(async (root) => {
+  const h = harness();
+  await mkdir(path.join(root, ".pi"), { recursive: true });
+  await writeFile(path.join(root, ".pi", "settings.json"), JSON.stringify({ packages: ["git:github.com/js-beaulieu/pi-harness@v0.0.1", "npm:@gotgenes/pi-permission-system@20.3.0"] }, null, 2) + "\n");
+  await h.commands.get("workspace:sync").handler("", ctx(root));
+  const settings = JSON.parse(await readFile(path.join(root, ".pi", "settings.json"), "utf8"));
+  const harnessSource = settings.packages.find((p: string) => /^git:github\.com\/[^/]+\/pi-harness@/.test(p));
+  assert.ok(harnessSource, "pi-harness git source should remain in packages");
+  const runningVersion = JSON.parse(await readFile(path.join(__dirname, "..", "package.json"), "utf8")).version;
+  assert.match(harnessSource, new RegExp(`@v${runningVersion.replace(/\./g, "\\.")}$`));
+  const manifest = JSON.parse(await readFile(path.join(root, ".pi-harness", "manifest.json"), "utf8"));
+  assert.equal(manifest.version, runningVersion);
+}));
+
+test("sync bumps the pinned pi-harness git source (colon form) to the running version", async () => workspace(async (root) => {
   const h = harness();
   await mkdir(path.join(root, ".pi"), { recursive: true });
   await writeFile(path.join(root, ".pi", "settings.json"), JSON.stringify({ packages: ["git:github.com:js-beaulieu/pi-harness@v0.0.1", "npm:@gotgenes/pi-permission-system@20.3.0"] }, null, 2) + "\n");
@@ -283,8 +297,6 @@ test("sync bumps the pinned pi-harness git source to the running version", async
   assert.ok(harnessSource, "pi-harness git source should remain in packages");
   const runningVersion = JSON.parse(await readFile(path.join(__dirname, "..", "package.json"), "utf8")).version;
   assert.match(harnessSource, new RegExp(`@v${runningVersion.replace(/\./g, "\\.")}$`));
-  const manifest = JSON.parse(await readFile(path.join(root, ".pi-harness", "manifest.json"), "utf8"));
-  assert.equal(manifest.version, runningVersion);
 }));
 
 test("sync accepts an explicit higher version and updates the pin", async () => workspace(async (root) => {
@@ -292,10 +304,10 @@ test("sync accepts an explicit higher version and updates the pin", async () => 
   await mkdir(path.join(root, ".pi"), { recursive: true });
   const runningVersion = JSON.parse(await readFile(path.join(__dirname, "..", "package.json"), "utf8")).version;
   const higher = runningVersion.split(".").map(Number); higher[2] += 1; const higherVersion = higher.join(".");
-  await writeFile(path.join(root, ".pi", "settings.json"), JSON.stringify({ packages: [`git:github.com:js-beaulieu/pi-harness@v${runningVersion}`, "npm:@gotgenes/pi-permission-system@20.3.0"] }, null, 2) + "\n");
+  await writeFile(path.join(root, ".pi", "settings.json"), JSON.stringify({ packages: [`git:github.com/js-beaulieu/pi-harness@v${runningVersion}`, "npm:@gotgenes/pi-permission-system@20.3.0"] }, null, 2) + "\n");
   await h.commands.get("workspace:sync").handler(higherVersion, ctx(root));
   const settings = JSON.parse(await readFile(path.join(root, ".pi", "settings.json"), "utf8"));
-  const harnessSource = settings.packages.find((p: string) => /^git:github\.com:[^/]+\/pi-harness@/.test(p));
+  const harnessSource = settings.packages.find((p: string) => /^git:github\.com\/[^/]+\/pi-harness@/.test(p));
   assert.ok(harnessSource);
   assert.match(harnessSource, new RegExp(`@v${higherVersion.replace(/\./g, "\\.")}$`));
   const manifest = JSON.parse(await readFile(path.join(root, ".pi-harness", "manifest.json"), "utf8"));
