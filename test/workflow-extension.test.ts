@@ -315,6 +315,31 @@ test("staging rejects a node with no anchor paths so the agent fixes it immediat
   await assert.rejects(treeRecord.execute("id", { impactToken, mode: "stage", reviews: [], unmappedReviews: [], nodes: [{ nodePath: "features/bad", title: "Bad node", anchors: { paths: ["svc.ts"], symbols: [], interfaces: [], relatedNodes: [] }, claims: [{ key: "purpose", category: "What", fact: "No paths.", paths: [], symbols: [], searchTerms: [] }] }] }, undefined, undefined, ctx(root)), /requires safe repository-relative source paths/);
 }));
 
+test("staging lets the agent drop a previously-staged entry so a poisoned buffer can be cleared (append-only merge bug)", async () => workspace(async (root) => {
+  await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n");
+  const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true });
+  execFileSync("git", ["init", "-q", "-b", "main", api]); execFileSync("git", ["-C", api, "config", "user.email", "test@example.com"]); execFileSync("git", ["-C", api, "config", "user.name", "Test User"]);
+  await writeFile(path.join(api, "a.txt"), "1\n"); await writeFile(path.join(api, "b.txt"), "2\n"); execFileSync("git", ["-C", api, "add", "."]); execFileSync("git", ["-C", api, "commit", "-qm", "Create a and b"]);
+  const h = harness(); await h.commands.get("workspace:knowledge-backfill").handler("api", ctx(root));
+  const knowledge = h.tools.get("workspace_knowledge"); const impactTool = h.tools.get("workspace_knowledge_impact"); const treeRecord = h.tools.get("workspace_knowledge_tree_record");
+  await knowledge.execute("id", { action: "history_plan", project: "api", segmentSizes: [1] }, undefined, undefined, ctx(root));
+  const started = await knowledge.execute("id", { action: "history_start", projects: ["api"] }, undefined, undefined, ctx(root));
+  h.asks.get("ask:answered")({ context: `pi-harness:backfill-start:${started.details.approvalKey}`, response: { kind: "selection", selections: ["Start processing"] } });
+  const chunk = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
+  const impact = await impactTool.execute("id", { scopeToken: chunk.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root));
+  const impactToken = impact.details.impactToken;
+  const anchorsA = { paths: ["a.txt"], symbols: [], interfaces: [], relatedNodes: [] };
+  // Agent stages the RIGHT node (features/a) and the WRONG node (features/extra, anchoring nothing in this scope) in an earlier attempt.
+  await treeRecord.execute("id", { impactToken, mode: "stage", reviews: [], unmappedReviews: [{ path: "a.txt", result: "new-node" }, { path: "b.txt", result: "no-durable-knowledge", reason: "Not durable." }], nodes: [{ nodePath: "features/a", title: "A capability", anchors: anchorsA, claims: [{ key: "purpose", category: "What", fact: "A.", paths: ["a.txt"], symbols: [], searchTerms: ["a"] }, { key: "how", category: "How", fact: "Exported.", paths: ["a.txt"], symbols: [], searchTerms: ["a.txt"] }, { key: "entry", category: "Where", fact: "Start at a.txt.", paths: ["a.txt"], symbols: [], searchTerms: ["a"] }] }, { nodePath: "features/extra", title: "Extra, wrong", anchors: { paths: ["nowhere.ts"], symbols: [], interfaces: [], relatedNodes: [] }, claims: [{ key: "purpose", category: "What", fact: "Mistake.", paths: ["nowhere.ts"], symbols: [], searchTerms: ["extra"] }] }] }, undefined, undefined, ctx(root));
+  // Commit fails: features/extra is not in impact (anchors no changed/unmapped path).
+  await assert.rejects(treeRecord.execute("id", { impactToken, mode: "commit", reviews: [{ nodePath: "features/a", result: "unchanged", reason: "ok" }], unmappedReviews: [], nodes: [] }, undefined, undefined, ctx(root)), /Extra|outside this source scope/);
+  // The agent now drops the poisoned node by nodePath.
+  const dropped = await treeRecord.execute("id", { impactToken, mode: "stage", drop: ["features/extra"], reviews: [], unmappedReviews: [], nodes: [] }, undefined, undefined, ctx(root));
+  assert.ok(!dropped.details.nodes.includes("features/extra"), "features/extra must be removable from the buffer");
+  assert.ok(dropped.details.nodes.includes("features/a"), "features/a must remain");
+  assert.equal(existsSync(path.join(root, "docs", ".pi-harness", "knowledge", "api", "features", "extra.json")), false);
+}));
+
 test("tree_record stage+commit decomposes a large handoff one node at a time", async () => workspace(async (root) => {
   await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n");
   const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true });
