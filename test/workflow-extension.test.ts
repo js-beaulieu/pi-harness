@@ -431,6 +431,31 @@ test("tree_record adopts the existing node title when a staged node reuses an ex
   assert.match(await readFile(path.join(root, "docs", "knowledge", "api", "features", "svc.md"), "utf8"), /^# Service capability/);
 }));
 
+test("tree_record rejects a new node anchoring paths already owned by an existing node (use moved, not a parallel node)", async () => workspace(async (root) => {
+  await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n");
+  const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true });
+  execFileSync("git", ["init", "-q", "-b", "main", api]); execFileSync("git", ["-C", api, "config", "user.email", "test@example.com"]); execFileSync("git", ["-C", api, "config", "user.name", "Test User"]);
+  // Commit 1 establishes features/owned anchored at owned.ts.
+  await writeFile(path.join(api, "owned.ts"), "1\n"); execFileSync("git", ["-C", api, "add", "."]); execFileSync("git", ["-C", api, "commit", "-qm", "Create owned"]);
+  // Commit 2 touches owned.ts. features/owned is impacted. The agent tries to re-assign ownership by creating features/other anchored at the SAME owned.ts (duplicate ownership) — must be rejected, not silently dropped.
+  await writeFile(path.join(api, "owned.ts"), "2\n"); execFileSync("git", ["-C", api, "add", "."]); execFileSync("git", ["-C", api, "commit", "-qm", "Evolve owned"]);
+  const h = harness(); await h.commands.get("workspace:knowledge-backfill").handler("api", ctx(root));
+  const knowledge = h.tools.get("workspace_knowledge"); const impactTool = h.tools.get("workspace_knowledge_impact"); const treeRecord = h.tools.get("workspace_knowledge_tree_record");
+  await knowledge.execute("id", { action: "history_plan", project: "api", segmentSizes: [1, 1] }, undefined, undefined, ctx(root));
+  const started = await knowledge.execute("id", { action: "history_start", projects: ["api"] }, undefined, undefined, ctx(root));
+  h.asks.get("ask:answered")({ context: `pi-harness:backfill-start:${started.details.approvalKey}`, response: { kind: "selection", selections: ["Start processing"] } });
+  const first = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
+  const firstImpact = await impactTool.execute("id", { scopeToken: first.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root));
+  const anchors = { paths: ["owned.ts"], symbols: [], interfaces: [], relatedNodes: [] };
+  await treeRecord.execute("id", { impactToken: firstImpact.details.impactToken, reviews: [], unmappedReviews: [{ path: "owned.ts", result: "new-node" }], nodes: [{ nodePath: "features/owned", title: "Owned capability", anchors, claims: [{ key: "purpose", category: "What", fact: "The owned capability.", paths: ["owned.ts"], symbols: [], searchTerms: ["owned"] }, { key: "how", category: "How", fact: "Exported module.", paths: ["owned.ts"], symbols: [], searchTerms: ["owned.ts"] }, { key: "entry", category: "Where", fact: "Start at owned.ts.", paths: ["owned.ts"], symbols: [], searchTerms: ["owned"] }] }] }, undefined, undefined, ctx(root));
+  // Segment 2: features/owned is directly impacted (path:owned.ts). The agent omits its review and instead supplies features/other anchoring the SAME owned.ts (duplicate ownership). Must be rejected so the agent uses a moved review on features/owned instead.
+  const second = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
+  const secondImpact = await impactTool.execute("id", { scopeToken: second.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root));
+  await assert.rejects(treeRecord.execute("id", { impactToken: secondImpact.details.impactToken, reviews: [], unmappedReviews: [], nodes: [{ nodePath: "features/other", title: "Other", anchors, claims: [{ key: "purpose", category: "What", fact: "Duplicates ownership.", paths: ["owned.ts"], symbols: [], searchTerms: ["owned"] }] }] }, undefined, undefined, ctx(root)), /directly impacted, require a review|outside this source scope/);
+  // The duplicate-ownership node must NOT have been persisted; only the segment-1 features/owned exists.
+  assert.equal(existsSync(path.join(root, "docs", ".pi-harness", "knowledge", "api", "features", "other.json")), false);
+}));
+
 test("tree_record classifies a large vendored subtree with a single glob unmappedReview instead of per-path grinding", async () => workspace(async (root) => {
   await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n");
   const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true });
