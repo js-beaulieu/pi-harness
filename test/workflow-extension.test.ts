@@ -292,7 +292,7 @@ test("tree_record stage+commit decomposes a large handoff one node at a time", a
   assert.equal(stageA.details.staged, true); assert.deepEqual(stageA.details.nodes, ["features/a"]);
   const stageB = await treeRecord.execute("id", { impactToken, mode: "stage", reviews: [], unmappedReviews: [{ path: "b.txt", result: "new-node" }], nodes: [{ nodePath: "features/b", title: "B capability", anchors: anchorsB, claims: [{ key: "purpose", category: "What", fact: "Provides the b capability.", paths: ["b.txt"], symbols: [], searchTerms: ["b"] }, { key: "why", category: "Why", fact: "Establishes b.", paths: ["b.txt"], symbols: [], searchTerms: ["Create b"] }, { key: "how", category: "How", fact: "The b state file carries the capability.", paths: ["b.txt"], symbols: [], searchTerms: ["b.txt"] }, { key: "entry", category: "Where", fact: "Start at the b state file.", paths: ["b.txt"], symbols: [], searchTerms: ["b"] }] }] }, undefined, undefined, ctx(root));
   assert.equal(stageB.details.staged, true); assert.deepEqual(stageB.details.nodes, ["features/a", "features/b"]);
-  const stagingFile = path.join(root, "docs", ".pi-harness", "staging", `${impactToken}.json`);
+  const stagingFile = path.join(root, "docs", ".pi-harness", "staging", `${stageA.details.scopeDigest}.json`);
   assert.equal(existsSync(stagingFile), true);
   const committed = await treeRecord.execute("id", { impactToken, mode: "commit", reviews: [], unmappedReviews: [], nodes: [] }, undefined, undefined, ctx(root));
   assert.deepEqual(committed.details.changedNodes.sort(), ["features/a", "features/b"]);
@@ -315,8 +315,8 @@ test("tree_record commit keeps the staging buffer on failure so the agent can am
   const chunk = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
   const impactToken = (await impactTool.execute("id", { scopeToken: chunk.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root))).details.impactToken;
   const anchors = { paths: ["svc.txt"], symbols: [], interfaces: [], relatedNodes: [] };
-  await treeRecord.execute("id", { impactToken, mode: "stage", reviews: [], unmappedReviews: [], nodes: [{ nodePath: "features/svc", title: "Service capability", anchors, claims: [{ key: "purpose", category: "What", fact: "Provides the service capability.", paths: ["svc.txt"], symbols: [], searchTerms: ["svc"] }, { key: "how", category: "How", fact: "The service state file carries the capability.", paths: ["svc.txt"], symbols: [], searchTerms: ["svc.txt"] }, { key: "entry", category: "Where", fact: "Start at the service state file.", paths: ["svc.txt"], symbols: [], searchTerms: ["svc"] }] }] }, undefined, undefined, ctx(root));
-  const stagingFile = path.join(root, "docs", ".pi-harness", "staging", `${impactToken}.json`);
+  const staged = await treeRecord.execute("id", { impactToken, mode: "stage", reviews: [], unmappedReviews: [], nodes: [{ nodePath: "features/svc", title: "Service capability", anchors, claims: [{ key: "purpose", category: "What", fact: "Provides the service capability.", paths: ["svc.txt"], symbols: [], searchTerms: ["svc"] }, { key: "how", category: "How", fact: "The service state file carries the capability.", paths: ["svc.txt"], symbols: [], searchTerms: ["svc.txt"] }, { key: "entry", category: "Where", fact: "Start at the service state file.", paths: ["svc.txt"], symbols: [], searchTerms: ["svc"] }] }] }, undefined, undefined, ctx(root));
+  const stagingFile = path.join(root, "docs", ".pi-harness", "staging", `${staged.details.scopeDigest}.json`);
   assert.equal(existsSync(stagingFile), true);
   // Commit without the required unmapped classification: validation fails and the buffer is preserved.
   await assert.rejects(treeRecord.execute("id", { impactToken, mode: "commit", reviews: [], unmappedReviews: [], nodes: [] }, undefined, undefined, ctx(root)), /Every and only unmapped changed path must be classified/);
@@ -362,6 +362,33 @@ test("tree_record snapshot auto-prunes references to deleted files and protects 
   const refreshed = await knowledge.execute("id", { action: "current_scope", project: "api" }, undefined, undefined, ctx(root));
   const refreshedImpact = await impactTool.execute("id", { scopeToken: refreshed.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root));
   await assert.rejects(treeRecord.execute("id", { impactToken: refreshedImpact.details.impactToken, reviews: [{ nodePath: "features/svc", result: "unchanged", reason: "Surviving anchor still matches." }, { nodePath: "features/dead", result: "unchanged", reason: "No surviving anchor." }], unmappedReviews: [], nodes: [] }, undefined, undefined, ctx(root)), /features\/dead.*no surviving anchors/);
+}));
+
+test("tree_record classifies a large vendored subtree with a single glob unmappedReview instead of per-path grinding", async () => workspace(async (root) => {
+  await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n");
+  const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true });
+  execFileSync("git", ["init", "-q", "-b", "main", api]); execFileSync("git", ["-C", api, "config", "user.email", "test@example.com"]); execFileSync("git", ["-C", api, "config", "user.name", "Test User"]);
+  // A real code file plus a large vendored docs/skill tree (50 .json/.vue files) added in one commit.
+  await writeFile(path.join(api, "service.ts"), "export const service = true;\n");
+  const vendored = path.join(api, ".agents", "skills", "vendored", "docs"); await mkdir(vendored, { recursive: true });
+  for (let index = 0; index < 50; index++) { await writeFile(path.join(vendored, `file-${index}.json`), `{"i":${index}}\n`); }
+  execFileSync("git", ["-C", api, "add", "."]); execFileSync("git", ["-C", api, "commit", "-qm", "Add service and vendored skill tree"]);
+  const h = harness(); await h.commands.get("workspace:knowledge-backfill").handler("api", ctx(root));
+  const knowledge = h.tools.get("workspace_knowledge"); const impactTool = h.tools.get("workspace_knowledge_impact"); const treeRecord = h.tools.get("workspace_knowledge_tree_record");
+  await knowledge.execute("id", { action: "history_plan", project: "api", segmentSizes: [1] }, undefined, undefined, ctx(root));
+  const started = await knowledge.execute("id", { action: "history_start", projects: ["api"] }, undefined, undefined, ctx(root));
+  h.asks.get("ask:answered")({ context: `pi-harness:backfill-start:${started.details.approvalKey}`, response: { kind: "selection", selections: ["Start processing"] } });
+  const chunk = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
+  const impact = await impactTool.execute("id", { scopeToken: chunk.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root));
+  const impactToken = impact.details.impactToken;
+  assert.ok(impact.details.unmappedChanges.length >= 51, `expected ~51 unmapped paths, got ${impact.details.unmappedChanges.length}`);
+  const anchors = { paths: ["service.ts"], symbols: [], interfaces: [], relatedNodes: [] };
+  // (a) Per-path grind: classifying only the real file leaves 50 vendored files unclassified -> rejected.
+  await assert.rejects(treeRecord.execute("id", { impactToken, reviews: [], unmappedReviews: [{ path: "service.ts", result: "new-node" }], nodes: [{ nodePath: "features/service", title: "Service capability", anchors, claims: [{ key: "purpose", category: "What", fact: "Provides the service capability.", paths: ["service.ts"], symbols: [], searchTerms: ["service"] }, { key: "how", category: "How", fact: "The service module exports the capability.", paths: ["service.ts"], symbols: [], searchTerms: ["service.ts"] }, { key: "entry", category: "Where", fact: "Start at the service module.", paths: ["service.ts"], symbols: [], searchTerms: ["service"] }] }] }, undefined, undefined, ctx(root)), /Every and only unmapped changed path must be classified/);
+  // (b) Glob fix: ONE entry with `.agents/skills/vendored/docs/**` covers all 50 vendored files.
+  const committed = await treeRecord.execute("id", { impactToken, reviews: [], unmappedReviews: [{ path: "service.ts", result: "new-node" }, { path: ".agents/skills/vendored/docs/**", result: "no-durable-knowledge", reason: "Vendored skill package docs; not durable project knowledge." }], nodes: [{ nodePath: "features/service", title: "Service capability", anchors, claims: [{ key: "purpose", category: "What", fact: "Provides the service capability.", paths: ["service.ts"], symbols: [], searchTerms: ["service"] }, { key: "how", category: "How", fact: "The service module exports the capability.", paths: ["service.ts"], symbols: [], searchTerms: ["service.ts"] }, { key: "entry", category: "Where", fact: "Start at the service module.", paths: ["service.ts"], symbols: [], searchTerms: ["service"] }] }] }, undefined, undefined, ctx(root));
+  assert.deepEqual(committed.details.changedNodes, ["features/service"]);
+  assert.equal(existsSync(path.join(root, "docs", ".pi-harness", "history", "api.json")), true);
 }));
 
 test("sync bumps the pinned pi-harness git source (slash form) to the running version", async () => workspace(async (root) => {
