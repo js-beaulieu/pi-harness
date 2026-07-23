@@ -297,6 +297,24 @@ test("tree_record rejects forward-reference relations with an actionable error l
   assert.equal(existsSync(path.join(root, "docs", ".pi-harness", "history", "api.json")), false);
 }));
 
+test("staging rejects a node with no anchor paths so the agent fixes it immediately instead of at commit", async () => workspace(async (root) => {
+  await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n");
+  const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true });
+  execFileSync("git", ["init", "-q", "-b", "main", api]); execFileSync("git", ["-C", api, "config", "user.email", "test@example.com"]); execFileSync("git", ["-C", api, "config", "user.name", "Test User"]);
+  await writeFile(path.join(api, "svc.ts"), "1\n"); execFileSync("git", ["-C", api, "add", "."]); execFileSync("git", ["-C", api, "commit", "-qm", "Create svc"]);
+  const h = harness(); await h.commands.get("workspace:knowledge-backfill").handler("api", ctx(root));
+  const knowledge = h.tools.get("workspace_knowledge"); const impactTool = h.tools.get("workspace_knowledge_impact"); const treeRecord = h.tools.get("workspace_knowledge_tree_record");
+  await knowledge.execute("id", { action: "history_plan", project: "api", segmentSizes: [1] }, undefined, undefined, ctx(root));
+  const started = await knowledge.execute("id", { action: "history_start", projects: ["api"] }, undefined, undefined, ctx(root));
+  h.asks.get("ask:answered")({ context: `pi-harness:backfill-start:${started.details.approvalKey}`, response: { kind:"selection", selections:["Start processing"] } });
+  const chunk = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
+  const impactToken = (await impactTool.execute("id", { scopeToken: chunk.details.scopeToken, graph: { status:"checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root))).details.impactToken;
+  // Empty anchors -> rejected at stage time with a specific, actionable message.
+  await assert.rejects(treeRecord.execute("id", { impactToken, mode: "stage", reviews: [], unmappedReviews: [], nodes: [{ nodePath: "features/bad", title: "Bad node", anchors: { paths: [], symbols: [], interfaces: [], relatedNodes: [] }, claims: [{ key: "purpose", category: "What", fact: "No anchors.", paths: ["svc.ts"], symbols: [], searchTerms: [] }] }] }, undefined, undefined, ctx(root)), /requires safe path anchors/);
+  // Empty claim paths -> also rejected at stage time.
+  await assert.rejects(treeRecord.execute("id", { impactToken, mode: "stage", reviews: [], unmappedReviews: [], nodes: [{ nodePath: "features/bad", title: "Bad node", anchors: { paths: ["svc.ts"], symbols: [], interfaces: [], relatedNodes: [] }, claims: [{ key: "purpose", category: "What", fact: "No paths.", paths: [], symbols: [], searchTerms: [] }] }] }, undefined, undefined, ctx(root)), /requires safe repository-relative source paths/);
+}));
+
 test("tree_record stage+commit decomposes a large handoff one node at a time", async () => workspace(async (root) => {
   await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n");
   const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true });
@@ -388,6 +406,31 @@ test("tree_record snapshot auto-prunes references to deleted files and protects 
   await assert.rejects(treeRecord.execute("id", { impactToken: refreshedImpact.details.impactToken, reviews: [{ nodePath: "features/svc", result: "unchanged", reason: "Surviving anchor still matches." }, { nodePath: "features/dead", result: "unchanged", reason: "No surviving anchor." }], unmappedReviews: [], nodes: [] }, undefined, undefined, ctx(root)), /features\/dead.*no surviving anchors/);
 }));
 
+test("tree_record adopts the existing node title when a staged node reuses an existing nodePath with a different title", async () => workspace(async (root) => {
+  await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n");
+  const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true });
+  execFileSync("git", ["init", "-q", "-b", "main", api]); execFileSync("git", ["-C", api, "config", "user.email", "test@example.com"]); execFileSync("git", ["-C", api, "config", "user.name", "Test User"]);
+  await writeFile(path.join(api, "svc.ts"), "1\n"); execFileSync("git", ["-C", api, "add", "."]); execFileSync("git", ["-C", api, "commit", "-qm", "Create svc"]);
+  await writeFile(path.join(api, "svc.ts"), "2\n"); execFileSync("git", ["-C", api, "add", "."]); execFileSync("git", ["-C", api, "commit", "-qm", "Evolve svc"]);
+  const h = harness(); await h.commands.get("workspace:knowledge-backfill").handler("api", ctx(root));
+  const knowledge = h.tools.get("workspace_knowledge"); const impactTool = h.tools.get("workspace_knowledge_impact"); const treeRecord = h.tools.get("workspace_knowledge_tree_record");
+  await knowledge.execute("id", { action: "history_plan", project: "api", segmentSizes: [1, 1] }, undefined, undefined, ctx(root));
+  const started = await knowledge.execute("id", { action: "history_start", projects: ["api"] }, undefined, undefined, ctx(root));
+  h.asks.get("ask:answered")({ context: `pi-harness:backfill-start:${started.details.approvalKey}`, response: { kind:"selection", selections:["Start processing"] } });
+  const first = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
+  const firstImpactToken = (await impactTool.execute("id", { scopeToken: first.details.scopeToken, graph: { status:"checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root))).details.impactToken;
+  const anchors = { paths: ["svc.ts"], symbols: [], interfaces: [], relatedNodes: [] };
+  // Segment 1 establishes the node with title "Service capability".
+  await treeRecord.execute("id", { impactToken: firstImpactToken, reviews: [], unmappedReviews: [{ path: "svc.ts", result: "new-node" }], nodes: [{ nodePath: "features/svc", title: "Service capability", anchors, claims: [{ key: "purpose", category: "What", fact: "The service capability.", paths: ["svc.ts"], symbols: [], searchTerms: ["svc"] }, { key: "how", category: "How", fact: "Exported module.", paths: ["svc.ts"], symbols: [], searchTerms: ["svc.ts"] }, { key: "entry", category: "Where", fact: "Start at svc.ts.", paths: ["svc.ts"], symbols: [], searchTerms: ["svc"] }] }] }, undefined, undefined, ctx(root));
+  // Segment 2 (distinct scope) re-stages features/svc with a DIFFERENT title ("Svc v2") — must adopt the existing title, not reject.
+  const second = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
+  const secondImpactToken = (await impactTool.execute("id", { scopeToken: second.details.scopeToken, graph: { status:"checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root))).details.impactToken;
+  const r = await treeRecord.execute("id", { impactToken: secondImpactToken, reviews: [{ nodePath: "features/svc", result: "updated" }], unmappedReviews: [{ path: "svc.ts", result: "new-node" }], nodes: [{ nodePath: "features/svc", title: "Svc v2", anchors, claims: [{ key: "how", category: "How", fact: "Evolved implementation.", paths: ["svc.ts"], symbols: [], searchTerms: ["svc.ts"] }] }] }, undefined, undefined, ctx(root));
+  assert.ok(r.details.processed);
+  assert.match(r.content[0].text, /Adopted the existing title for 1 node/);
+  assert.match(await readFile(path.join(root, "docs", "knowledge", "api", "features", "svc.md"), "utf8"), /^# Service capability/);
+}));
+
 test("tree_record classifies a large vendored subtree with a single glob unmappedReview instead of per-path grinding", async () => workspace(async (root) => {
   await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n");
   const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true });
@@ -413,6 +456,34 @@ test("tree_record classifies a large vendored subtree with a single glob unmappe
   const committed = await treeRecord.execute("id", { impactToken, reviews: [], unmappedReviews: [{ path: "service.ts", result: "new-node" }, { path: ".agents/skills/vendored/docs/**", result: "no-durable-knowledge", reason: "Vendored skill package docs; not durable project knowledge." }], nodes: [{ nodePath: "features/service", title: "Service capability", anchors, claims: [{ key: "purpose", category: "What", fact: "Provides the service capability.", paths: ["service.ts"], symbols: [], searchTerms: ["service"] }, { key: "how", category: "How", fact: "The service module exports the capability.", paths: ["service.ts"], symbols: [], searchTerms: ["service.ts"] }, { key: "entry", category: "Where", fact: "Start at the service module.", paths: ["service.ts"], symbols: [], searchTerms: ["service"] }] }] }, undefined, undefined, ctx(root));
   assert.deepEqual(committed.details.changedNodes, ["features/service"]);
   assert.equal(existsSync(path.join(root, "docs", ".pi-harness", "history", "api.json")), true);
+}));
+
+test("tree_record drops redundant unmappedReviews for anchor-covered paths and auto-defaults related-only node reviews", async () => workspace(async (root) => {
+  await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n");
+  const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true });
+  execFileSync("git", ["init", "-q", "-b", "main", api]); execFileSync("git", ["-C", api, "config", "user.email", "test@example.com"]); execFileSync("git", ["-C", api, "config", "user.name", "Test User"]);
+  // Both nodes exist before segment 2 so segment 2 only needs reviews.
+  // Create commit 1: just owned.ts (segment 1 records features/owned + features/related as new nodes, both anchored).
+  await writeFile(path.join(api, "owned.ts"), "export const x = 1;\n"); await writeFile(path.join(api, "related.ts"), "export const r = 0;\n"); execFileSync("git", ["-C", api, "add", "."]); execFileSync("git", ["-C", api, "commit", "-qm", "Create owned and related"]);
+  // Create commit 2: evolve owned.ts only. features/owned is directly impacted; features/related is related-only (it relates to features/owned).
+  await writeFile(path.join(api, "owned.ts"), "export const x = 2;\n"); execFileSync("git", ["-C", api, "add", "."]); execFileSync("git", ["-C", api, "commit", "-qm", "Evolve owned"]);
+  const h = harness(); await h.commands.get("workspace:knowledge-backfill").handler("api", ctx(root));
+  const knowledge = h.tools.get("workspace_knowledge"); const impactTool = h.tools.get("workspace_knowledge_impact"); const treeRecord = h.tools.get("workspace_knowledge_tree_record");
+  await knowledge.execute("id", { action: "history_plan", project: "api", segmentSizes: [1, 1] }, undefined, undefined, ctx(root));
+  const started = await knowledge.execute("id", { action: "history_start", projects: ["api"] }, undefined, undefined, ctx(root));
+  h.asks.get("ask:answered")({ context: `pi-harness:backfill-start:${started.details.approvalKey}`, response: { kind: "selection", selections: ["Start processing"] } });
+  const first = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
+  const firstImpact = await impactTool.execute("id", { scopeToken: first.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root));
+  await treeRecord.execute("id", { impactToken: firstImpact.details.impactToken, reviews: [], unmappedReviews: [{ path: "owned.ts", result: "new-node" }, { path: "related.ts", result: "new-node" }], nodes: [{ nodePath: "features/owned", title: "Owned capability", anchors: { paths: ["owned.ts"], symbols: [], interfaces: [], relatedNodes: ["features/related"] }, claims: [{ key: "purpose", category: "What", fact: "The owned capability.", paths: ["owned.ts"], symbols: [], searchTerms: ["owned"] }, { key: "how", category: "How", fact: "Exported module.", paths: ["owned.ts"], symbols: [], searchTerms: ["owned.ts"] }, { key: "entry", category: "Where", fact: "Start at owned.ts.", paths: ["owned.ts"], symbols: [], searchTerms: ["owned"] }] }, { nodePath: "features/related", title: "Related capability", anchors: { paths: ["related.ts"], symbols: [], interfaces: [], relatedNodes: ["features/owned"] }, claims: [{ key: "purpose", category: "What", fact: "The related capability.", paths: ["related.ts"], symbols: [], searchTerms: ["related"] }, { key: "how", category: "How", fact: "Exported module.", paths: ["related.ts"], symbols: [], searchTerms: ["related.ts"] }, { key: "entry", category: "Where", fact: "Start at related.ts.", paths: ["related.ts"], symbols: [], searchTerms: ["related"] }] }] }, undefined, undefined, ctx(root));
+  // Segment 2: only owned.ts changed. features/owned is directly impacted (path:owned.ts); features/related is related-only (relatedNodes -> features/owned).
+  const second = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
+  const secondImpact = await impactTool.execute("id", { scopeToken: second.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root));
+  const fi = secondImpact.details.requiredNodeReviews;
+  assert.ok(fi.some((n: any) => n.nodePath === "features/owned" && n.matchedBy.some((r: string) => r.startsWith("path:"))), "features/owned is directly impacted");
+  // The agent supplies a redundant unmappedReview for owned.ts (already covered by features/owned anchor) and omits the related-only node's review.
+  const r = await treeRecord.execute("id", { impactToken: secondImpact.details.impactToken, reviews: [{ nodePath: "features/owned", result: "unchanged", reason: "Minor change, guidance still accurate." }], unmappedReviews: [{ path: "owned.ts", result: "no-durable-knowledge", reason: "Redundant — covered by anchor." }], nodes: [] }, undefined, undefined, ctx(root));
+  assert.ok(r.details.processed, "commit must succeed despite the redundant unmappedReview and missing related-only reviews");
+  assert.match(r.content[0].text, /Dropped 1 redundant unmappedReviews/);
 }));
 
 test("sync bumps the pinned pi-harness git source (slash form) to the running version", async () => workspace(async (root) => {
