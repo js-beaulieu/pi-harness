@@ -329,3 +329,10 @@ test("sync leaves a local path source untouched", async () => workspace(async (r
   const settings = JSON.parse(await readFile(path.join(root, ".pi", "settings.json"), "utf8"));
   assert.ok(settings.packages.includes(localSource), "local path source should be preserved unchanged");
 }));
+
+test("template gitignore ignores root .pi-harness but not docs/.pi-harness", async () => {
+  const gitignore = await readFile(path.join(__dirname, "..", "templates", "root", "gitignore"), "utf8");
+  const lines = gitignore.split("\n");
+  assert.ok(lines.includes(".pi-harness/"), ".pi-harness should be ignored everywhere (root and docs)");
+  assert.ok(!lines.includes("/.pi-harness/"), "anchored .pi-harness pattern must not appear (would let docs/.pi-harness be tracked)");
+});
