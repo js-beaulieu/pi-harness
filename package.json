@@ -1,6 +1,6 @@
 {
   "name": "pi-harness",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "A manifest-driven multi-repository workflow for Pi",
   "license": "MIT",
   "type": "module",

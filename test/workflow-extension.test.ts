@@ -43,7 +43,7 @@ test("the dedicated backfill agent records knowledge directly and cannot write f
   assert.match(frontmatter, /workspace_knowledge_impact: allow/);
   assert.match(frontmatter, /workspace_knowledge_tree_record: allow/);
   assert.match(frontmatter, /workspace_knowledge:/); assert.match(frontmatter, /orientation.*allow/); assert.match(frontmatter, /search.*allow/); assert.match(frontmatter, /read.*allow/);
-  assert.match(definition, /call workspace_knowledge_tree_record once/); assert.match(definition, /never emit a handoff file/);
+  assert.match(definition, /mode:"stage"/); assert.match(definition, /mode:"commit"/); assert.match(definition, /never emit a handoff file/);
 });
 
 test("canonical docs are blocked outside the knowledge tool", async () => workspace(async (root) => {
@@ -271,6 +271,97 @@ test("tree_record rejects forward-reference relations with an actionable error l
   await assert.rejects(treeRecord.execute("id", { impactToken: impact.details.impactToken, reviews: [], unmappedReviews: [{ path: "service.txt", result: "new-node" }], nodes: [{ nodePath: "features/service", title: "Service capability", anchors: serviceAnchors, claims: [{ key: "purpose", category: "What", fact: "Provides the service capability.", paths: ["service.txt"], symbols: [], searchTerms: ["service"] }, { key: "implementation", category: "How", fact: "The service state file carries the capability.", paths: ["service.txt"], symbols: [], searchTerms: ["service.txt"] }, { key: "entry", category: "Where", fact: "Start at the service state file.", paths: ["service.txt"], symbols: [], searchTerms: ["service"] }] }] }, undefined, undefined, ctx(root)), /features\/service -> interfaces\/ui.*Either remove the relation, or add a node/);
   // No receipt saved: the segment is still pending and can be re-recorded once the agent fixes the handoff.
   assert.equal(existsSync(path.join(root, "docs", ".pi-harness", "history", "api.json")), false);
+}));
+
+test("tree_record stage+commit decomposes a large handoff one node at a time", async () => workspace(async (root) => {
+  await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n");
+  const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true });
+  execFileSync("git", ["init", "-q", "-b", "main", api]); execFileSync("git", ["-C", api, "config", "user.email", "test@example.com"]); execFileSync("git", ["-C", api, "config", "user.name", "Test User"]);
+  await writeFile(path.join(api, "a.txt"), "1\n"); await writeFile(path.join(api, "b.txt"), "2\n"); execFileSync("git", ["-C", api, "add", "a.txt", "b.txt"]); execFileSync("git", ["-C", api, "commit", "-qm", "Create a and b"]);
+  const h = harness(); await h.commands.get("workspace:knowledge-backfill").handler("api", ctx(root));
+  const knowledge = h.tools.get("workspace_knowledge"); const impactTool = h.tools.get("workspace_knowledge_impact"); const treeRecord = h.tools.get("workspace_knowledge_tree_record");
+  await knowledge.execute("id", { action: "history_plan", project: "api", segmentSizes: [1] }, undefined, undefined, ctx(root));
+  const started = await knowledge.execute("id", { action: "history_start", projects: ["api"] }, undefined, undefined, ctx(root));
+  h.asks.get("ask:answered")({ context: `pi-harness:backfill-start:${started.details.approvalKey}`, response: { kind: "selection", selections: ["Start processing"] } });
+  const chunk = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
+  const impactToken = (await impactTool.execute("id", { scopeToken: chunk.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root))).details.impactToken;
+  const anchorsA = { paths: ["a.txt"], symbols: [], interfaces: [], relatedNodes: [] };
+  const anchorsB = { paths: ["b.txt"], symbols: [], interfaces: [], relatedNodes: [] };
+  // The agent stages one node per call instead of one giant payload.
+  const stageA = await treeRecord.execute("id", { impactToken, mode: "stage", reviews: [], unmappedReviews: [{ path: "a.txt", result: "new-node" }], nodes: [{ nodePath: "features/a", title: "A capability", anchors: anchorsA, claims: [{ key: "purpose", category: "What", fact: "Provides the a capability.", paths: ["a.txt"], symbols: [], searchTerms: ["a"] }, { key: "why", category: "Why", fact: "Establishes a.", paths: ["a.txt"], symbols: [], searchTerms: ["Create a"] }, { key: "how", category: "How", fact: "The a state file carries the capability.", paths: ["a.txt"], symbols: [], searchTerms: ["a.txt"] }, { key: "entry", category: "Where", fact: "Start at the a state file.", paths: ["a.txt"], symbols: [], searchTerms: ["a"] }] }] }, undefined, undefined, ctx(root));
+  assert.equal(stageA.details.staged, true); assert.deepEqual(stageA.details.nodes, ["features/a"]);
+  const stageB = await treeRecord.execute("id", { impactToken, mode: "stage", reviews: [], unmappedReviews: [{ path: "b.txt", result: "new-node" }], nodes: [{ nodePath: "features/b", title: "B capability", anchors: anchorsB, claims: [{ key: "purpose", category: "What", fact: "Provides the b capability.", paths: ["b.txt"], symbols: [], searchTerms: ["b"] }, { key: "why", category: "Why", fact: "Establishes b.", paths: ["b.txt"], symbols: [], searchTerms: ["Create b"] }, { key: "how", category: "How", fact: "The b state file carries the capability.", paths: ["b.txt"], symbols: [], searchTerms: ["b.txt"] }, { key: "entry", category: "Where", fact: "Start at the b state file.", paths: ["b.txt"], symbols: [], searchTerms: ["b"] }] }] }, undefined, undefined, ctx(root));
+  assert.equal(stageB.details.staged, true); assert.deepEqual(stageB.details.nodes, ["features/a", "features/b"]);
+  const stagingFile = path.join(root, "docs", ".pi-harness", "staging", `${impactToken}.json`);
+  assert.equal(existsSync(stagingFile), true);
+  const committed = await treeRecord.execute("id", { impactToken, mode: "commit", reviews: [], unmappedReviews: [], nodes: [] }, undefined, undefined, ctx(root));
+  assert.deepEqual(committed.details.changedNodes.sort(), ["features/a", "features/b"]);
+  assert.equal(existsSync(stagingFile), false);
+  assert.match(await readFile(path.join(root, "docs", "knowledge", "api", "features", "a.md"), "utf8"), /## What/);
+  assert.match(await readFile(path.join(root, "docs", "knowledge", "api", "features", "b.md"), "utf8"), /## What/);
+  const status = await knowledge.execute("id", { action: "history_status", projects: ["api"] }, undefined, undefined, ctx(root)); assert.equal(status.details.projects[0].upToDate, true);
+}));
+
+test("tree_record commit keeps the staging buffer on failure so the agent can amend and retry", async () => workspace(async (root) => {
+  await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n");
+  const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true });
+  execFileSync("git", ["init", "-q", "-b", "main", api]); execFileSync("git", ["-C", api, "config", "user.email", "test@example.com"]); execFileSync("git", ["-C", api, "config", "user.name", "Test User"]);
+  await writeFile(path.join(api, "svc.txt"), "1\n"); execFileSync("git", ["-C", api, "add", "svc.txt"]); execFileSync("git", ["-C", api, "commit", "-qm", "Create svc"]);
+  const h = harness(); await h.commands.get("workspace:knowledge-backfill").handler("api", ctx(root));
+  const knowledge = h.tools.get("workspace_knowledge"); const impactTool = h.tools.get("workspace_knowledge_impact"); const treeRecord = h.tools.get("workspace_knowledge_tree_record");
+  await knowledge.execute("id", { action: "history_plan", project: "api", segmentSizes: [1] }, undefined, undefined, ctx(root));
+  const started = await knowledge.execute("id", { action: "history_start", projects: ["api"] }, undefined, undefined, ctx(root));
+  h.asks.get("ask:answered")({ context: `pi-harness:backfill-start:${started.details.approvalKey}`, response: { kind: "selection", selections: ["Start processing"] } });
+  const chunk = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
+  const impactToken = (await impactTool.execute("id", { scopeToken: chunk.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root))).details.impactToken;
+  const anchors = { paths: ["svc.txt"], symbols: [], interfaces: [], relatedNodes: [] };
+  await treeRecord.execute("id", { impactToken, mode: "stage", reviews: [], unmappedReviews: [], nodes: [{ nodePath: "features/svc", title: "Service capability", anchors, claims: [{ key: "purpose", category: "What", fact: "Provides the service capability.", paths: ["svc.txt"], symbols: [], searchTerms: ["svc"] }, { key: "how", category: "How", fact: "The service state file carries the capability.", paths: ["svc.txt"], symbols: [], searchTerms: ["svc.txt"] }, { key: "entry", category: "Where", fact: "Start at the service state file.", paths: ["svc.txt"], symbols: [], searchTerms: ["svc"] }] }] }, undefined, undefined, ctx(root));
+  const stagingFile = path.join(root, "docs", ".pi-harness", "staging", `${impactToken}.json`);
+  assert.equal(existsSync(stagingFile), true);
+  // Commit without the required unmapped classification: validation fails and the buffer is preserved.
+  await assert.rejects(treeRecord.execute("id", { impactToken, mode: "commit", reviews: [], unmappedReviews: [], nodes: [] }, undefined, undefined, ctx(root)), /Every and only unmapped changed path must be classified/);
+  assert.equal(existsSync(stagingFile), true);
+  // No node was persisted yet and no receipt was saved.
+  assert.equal(existsSync(path.join(root, "docs", ".pi-harness", "knowledge", "api", "features", "svc.json")), false);
+  // Supply the missing classification inline at commit; the staged node is merged in and recording succeeds.
+  const committed = await treeRecord.execute("id", { impactToken, mode: "commit", reviews: [], unmappedReviews: [{ path: "svc.txt", result: "new-node" }], nodes: [] }, undefined, undefined, ctx(root));
+  assert.deepEqual(committed.details.changedNodes, ["features/svc"]);
+  assert.equal(existsSync(stagingFile), false);
+}));
+
+test("tree_record snapshot auto-prunes references to deleted files and protects total-anchor loss", async () => workspace(async (root) => {
+  await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n");
+  const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true });
+  execFileSync("git", ["init", "-q", "-b", "main", api]); execFileSync("git", ["-C", api, "config", "user.email", "test@example.com"]); execFileSync("git", ["-C", api, "config", "user.name", "Test User"]);
+  await writeFile(path.join(api, "svc.txt"), "1\n"); await writeFile(path.join(api, "gone.txt"), "x\n"); execFileSync("git", ["-C", api, "add", "svc.txt", "gone.txt"]); execFileSync("git", ["-C", api, "commit", "-qm", "Create svc and gone"]);
+  execFileSync("git", ["-C", api, "rm", "-q", "gone.txt"]); execFileSync("git", ["-C", api, "commit", "-qm", "Delete gone"]);
+  const h = harness(); await h.commands.get("workspace:knowledge-backfill").handler("api", ctx(root));
+  const knowledge = h.tools.get("workspace_knowledge"); const impactTool = h.tools.get("workspace_knowledge_impact"); const treeRecord = h.tools.get("workspace_knowledge_tree_record");
+  await knowledge.execute("id", { action: "history_plan", project: "api", segmentSizes: [1, 1] }, undefined, undefined, ctx(root));
+  const started = await knowledge.execute("id", { action: "history_start", projects: ["api"] }, undefined, undefined, ctx(root));
+  h.asks.get("ask:answered")({ context: `pi-harness:backfill-start:${started.details.approvalKey}`, response: { kind: "selection", selections: ["Start processing"] } });
+  const first = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
+  const firstImpact = await impactTool.execute("id", { scopeToken: first.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root));
+  const anchors = { paths: ["svc.txt", "gone.txt"], symbols: [], interfaces: [], relatedNodes: [] };
+  // Segment 1 records a node anchored at both svc.txt and gone.txt; gone.txt is deleted in segment 2.
+  await treeRecord.execute("id", { impactToken: firstImpact.details.impactToken, reviews: [], unmappedReviews: [{ path: "svc.txt", result: "new-node" }, { path: "gone.txt", result: "new-node" }], nodes: [{ nodePath: "features/svc", title: "Service capability", anchors, claims: [{ key: "purpose", category: "What", fact: "Provides the service capability spanning svc and gone.", paths: ["svc.txt", "gone.txt"], symbols: [], searchTerms: ["svc"] }, { key: "how", category: "How", fact: "The service state files carry the capability.", paths: ["svc.txt", "gone.txt"], symbols: [], searchTerms: ["svc.txt"] }, { key: "entry", category: "Where", fact: "Start at the service state files.", paths: ["svc.txt", "gone.txt"], symbols: [], searchTerms: ["svc"] }] }] }, undefined, undefined, ctx(root));
+  const second = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
+  const secondImpact = await impactTool.execute("id", { scopeToken: second.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root));
+  // Segment 2 (deletion of gone.txt): the agent marks the node unchanged and does NOT repoint, leaving a stale locator for the snapshot audit.
+  await treeRecord.execute("id", { impactToken: secondImpact.details.impactToken, reviews: [{ nodePath: "features/svc", result: "unchanged", reason: "Deletion is reconciled at the final current-snapshot audit." }], unmappedReviews: [], nodes: [] }, undefined, undefined, ctx(root));
+  const current = await knowledge.execute("id", { action: "current_scope", project: "api" }, undefined, undefined, ctx(root));
+  const currentImpact = await impactTool.execute("id", { scopeToken: current.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root));
+  const result = await treeRecord.execute("id", { impactToken: currentImpact.details.impactToken, reviews: [{ nodePath: "features/svc", result: "unchanged", reason: "Surviving anchor still matches current code." }], unmappedReviews: [], nodes: [] }, undefined, undefined, ctx(root));
+  assert.match(result.content[0].text, /Pruned vanished locators from features\/svc/);
+  const nodeState = JSON.parse(await readFile(path.join(root, "docs", ".pi-harness", "knowledge", "api", "features", "svc.json"), "utf8"));
+  assert.deepEqual(nodeState.anchors.paths, ["svc.txt"]); assert.equal(nodeState.claims.every((c: any) => c.paths.every((p: string) => p === "svc.txt")), true);
+  assert.equal(existsSync(path.join(root, "docs", ".pi-harness", "snapshots", "api.json")), true);
+  // A node anchored solely at a deleted file has no surviving anchor and is rejected with a guiding error (rename un-repointed or full delete).
+  await mkdir(path.join(root, "docs", ".pi-harness", "knowledge", "api", "features"), { recursive: true });
+  await writeFile(path.join(root, "docs", ".pi-harness", "knowledge", "api", "features", "dead.json"), JSON.stringify({ version: 1, project: "api", nodePath: "features/dead", title: "Dead capability", status: "active", anchors: { paths: ["gone.txt"], symbols: [], interfaces: [], relatedNodes: [] }, claims: [{ key: "purpose", category: "What", fact: "Describes gone code.", paths: ["gone.txt"], symbols: [], searchTerms: [], stateHash: "x" }] }, null, 2));
+  const refreshed = await knowledge.execute("id", { action: "current_scope", project: "api" }, undefined, undefined, ctx(root));
+  const refreshedImpact = await impactTool.execute("id", { scopeToken: refreshed.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root));
+  await assert.rejects(treeRecord.execute("id", { impactToken: refreshedImpact.details.impactToken, reviews: [{ nodePath: "features/svc", result: "unchanged", reason: "Surviving anchor still matches." }, { nodePath: "features/dead", result: "unchanged", reason: "No surviving anchor." }], unmappedReviews: [], nodes: [] }, undefined, undefined, ctx(root)), /features\/dead.*no surviving anchors/);
 }));
 
 test("sync bumps the pinned pi-harness git source (slash form) to the running version", async () => workspace(async (root) => {
