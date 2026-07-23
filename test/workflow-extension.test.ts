@@ -130,6 +130,30 @@ test("one adjustable plan approval processes multiple projects in order", async 
   const complete = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root)); assert.equal(complete.details.complete, true); assert.equal(await h.events.get("tool_call")({ toolName: "bash", input: { command: "git log --oneline" } }, ctx(root)), undefined);
 }));
 
+test("history_chunk proceeds after the tool_call hook injects the backfill-start context the orchestrator omitted from ask_user", async () => workspace(async (root) => {
+  await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n");
+  const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true }); execFileSync("git", ["init", "-q", "-b", "main", api]); execFileSync("git", ["-C", api, "config", "user.email", "test@example.com"]); execFileSync("git", ["-C", api, "config", "user.name", "Test User"]); await writeFile(path.join(api, "service.txt"), "1\n"); execFileSync("git", ["-C", api, "add", "service.txt"]); execFileSync("git", ["-C", api, "commit", "-qm", "Create service"]);
+  const h = harness(); await h.commands.get("workspace:knowledge-backfill").handler("api", ctx(root));
+  const knowledge = h.tools.get("workspace_knowledge"); const impact = h.tools.get("workspace_knowledge_impact"); const record = h.tools.get("workspace_knowledge_tree_record");
+  await knowledge.execute("id", { action: "history_plan", project: "api" }, undefined, undefined, ctx(root));
+  await knowledge.execute("id", { action: "history_start", projects: ["api"] }, undefined, undefined, ctx(root));
+  const pending = await knowledge.execute("id", { action: "history_status", projects: ["api"] }, undefined, undefined, ctx(root)); assert.equal(pending.details.phase, "pending");
+  // The orchestrator called ask_user with empty input (no context) — the LLM omitted the binding.
+  const askInput: any = {};
+  const block = await h.events.get("tool_call")({ toolName: "ask_user", input: askInput }, ctx(root));
+  assert.equal(block, undefined);
+  // The hook injected the exact backfill-start context so ask_user carries and emits the binding.
+  assert.match(askInput.context, /pi-harness:backfill-start:[a-f0-9]{24}/);
+  // ask_user emits ask:answered with that injected context; the strict handler promotes staged→active.
+  h.asks.get("ask:answered")({ context: askInput.context, response: { kind: "selection", selections: ["Start processing"] } });
+  const processing = await knowledge.execute("id", { action: "history_status", projects: ["api"] }, undefined, undefined, ctx(root)); assert.equal(processing.details.phase, "processing");
+  const chunk = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root));
+  assert.equal(chunk.details.project, "api"); assert.ok(chunk.details.commits.length > 0);
+  const assessed = await impact.execute("id", { scopeToken: chunk.details.scopeToken, graph: { status: "checked" }, changedSymbols: [], changedInterfaces: [] }, undefined, undefined, ctx(root));
+  await record.execute("id", { impactToken: assessed.details.impactToken, reviews: [], unmappedReviews: [{ path: "service.txt", result: "no-durable-knowledge", reason: "Fixture text has no program behavior." }], nodes: [] }, undefined, undefined, ctx(root));
+  const complete = await knowledge.execute("id", { action: "history_chunk" }, undefined, undefined, ctx(root)); assert.equal(complete.details.complete, true);
+}));
+
 test("history_status reports planning, pending, and processing phases so the orchestrator knows the next action", async () => workspace(async (root) => {
   await writeFile(path.join(root, "workspace.yaml"), "workspace:\n  docs_directory: docs\n  projects_directory: projects\nprojects:\n  - name: api\n    path: api\n    default_branch: main\n    ci: []\n");
   const api = path.join(root, "projects", "api"); await mkdir(api, { recursive: true }); execFileSync("git", ["init", "-q", "-b", "main", api]); execFileSync("git", ["-C", api, "config", "user.email", "test@example.com"]); execFileSync("git", ["-C", api, "config", "user.name", "Test User"]); await writeFile(path.join(api, "service.txt"), "1\n"); execFileSync("git", ["-C", api, "add", "service.txt"]); execFileSync("git", ["-C", api, "commit", "-qm", "Create service"]);
